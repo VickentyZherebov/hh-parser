@@ -3,6 +3,7 @@ import re
 import time
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
+from typing import Callable, Optional
 from urllib.parse import urljoin, urlparse, parse_qs, urlencode, urlunparse
 
 import requests
@@ -161,10 +162,25 @@ def parse_companies_from_industry_page(html: str, industry_name: str, industry_u
     return companies
 
 
-def scrape_companies(industry: Industry, min_vacancies: int, area: int = 113, only_with_open_vacancies: bool = True) -> list[Company]:
+def scrape_companies(
+    industry: Industry,
+    min_vacancies: int,
+    area: int = 113,
+    only_with_open_vacancies: bool = True,
+    progress_cb: Optional[Callable[[dict], None]] = None,
+) -> list[Company]:
     """
     Обходит все страницы выбранной индустрии и собирает компании.
     area=113 — Россия (можешь поменять на нужный area).
+
+    progress_cb вызывается раз в страницу:
+      {
+        "industry_name": str,
+        "page": int,                       # 1..pages_total
+        "pages_total": int,
+        "companies_found_total": int,      # распарсили на страницах
+        "companies_added_total": int,      # прошло фильтр и добавлено (после дедуп)
+      }
     """
     session = requests.Session()
     session.headers.update(
@@ -184,17 +200,36 @@ def scrape_companies(industry: Industry, min_vacancies: int, area: int = 113, on
     html0 = fetch_html(url0, session)
     soup0 = soupify(html0)
     max_page = extract_max_page(soup0)
+    pages_total = max_page + 1
 
     out: dict[str, Company] = {}  # url -> Company (дедуп по url)
+    found_total = 0  # сколько компаний распарсили со всех страниц (до фильтра)
 
-    for page in range(0, max_page + 1):
+    for page in range(0, pages_total):
         url = with_query(url0, page=page)
         html = fetch_html(url, session)
         companies = parse_companies_from_industry_page(html, industry.name, industry.slug_url)
 
+        found_total += len(companies)
+
         for c in companies:
             if c.vacancies >= min_vacancies:
                 out[c.url] = c
+
+        if progress_cb:
+            try:
+                progress_cb(
+                    {
+                        "industry_name": industry.name,
+                        "page": page + 1,
+                        "pages_total": pages_total,
+                        "companies_found_total": found_total,
+                        "companies_added_total": len(out),
+                    }
+                )
+            except Exception:
+                # UI-коллбек не должен валить парсер
+                pass
 
         # небольшая пауза, чтобы не долбить HH
         time.sleep(0.35)
