@@ -1,16 +1,23 @@
-name: Build desktop apps
+name: Build single-file binaries (PyInstaller)
 
 on:
   push:
-    branches: ["main"]
+    tags:
+      - "v*"
   workflow_dispatch: {}
 
 jobs:
   build:
     strategy:
-      fail-fast: false  # <— важно: не отменять macOS если Windows упал
+      fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        include:
+          - os: windows-latest
+            artifact: hh-parser-windows
+            out: HH-Parser.exe
+          - os: macos-14
+            artifact: hh-parser-macos
+            out: HH-Parser
 
     runs-on: ${{ matrix.os }}
 
@@ -27,26 +34,19 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pyinstaller
 
-      # ---- Windows build (чинит UnicodeEncodeError в rich) ----
-      - name: Build (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
+      - name: Build (PyInstaller onefile)
         run: |
-          chcp 65001
-          [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
-          $env:PYTHONUTF8 = "1"
-          $env:PYTHONIOENCODING = "utf-8"
-          flet build windows --module-name main
+          pyinstaller --onefile --windowed --name "${{ matrix.out }}" main.py
 
-      # ---- macOS build ----
-      - name: Build (macOS)
+      - name: Remove macOS quarantine attrs
         if: runner.os == 'macOS'
         run: |
-          flet build macos --module-name main
+          xattr -cr "dist/${{ matrix.out }}" || true
 
-      - name: Upload artifacts
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hh-parser-${{ matrix.os }}
-          path: build/
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.out }}
