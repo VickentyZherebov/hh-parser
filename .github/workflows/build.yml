@@ -1,4 +1,4 @@
-name: Build single-file binaries (PyInstaller)
+name: Build binaries + Windows installer (PyInstaller + Inno Setup)
 
 on:
   push:
@@ -14,10 +14,10 @@ jobs:
         include:
           - os: windows-latest
             artifact: hh-parser-windows
-            out: HH-Parser.exe
+            exe_name: HH-Parser
           - os: macos-14
             artifact: hh-parser-macos
-            out: HH-Parser
+            exe_name: HH-Parser
 
     runs-on: ${{ matrix.os }}
 
@@ -30,23 +30,64 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install deps
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install pyinstaller
+        shell: bash
 
+      # ✅ PyInstaller: имя БЕЗ .exe
+      # ✅ На macOS НЕ используем --windowed, чтобы не получить .app
       - name: Build (PyInstaller onefile)
         run: |
-          pyinstaller --onefile --windowed --name "${{ matrix.out }}" main.py
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            pyinstaller --onefile --noconsole --name "${{ matrix.exe_name }}" main.py
+          else
+            pyinstaller --onefile --name "${{ matrix.exe_name }}" main.py
+            chmod +x "dist/${{ matrix.exe_name }}" || true
+            xattr -cr "dist/${{ matrix.exe_name }}" || true
+          fi
+        shell: bash
 
-      - name: Remove macOS quarantine attrs
-        if: runner.os == 'macOS'
-        run: |
-          xattr -cr "dist/${{ matrix.out }}" || true
-
-      - name: Upload artifact
+      - name: Upload artifact (Windows exe)
+        if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.out }}
+          path: dist/${{ matrix.exe_name }}.exe
+
+      - name: Upload artifact (macOS binary)
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.exe_name }}
+
+  # ✅ Инсталлятор делаем ТОЛЬКО на Windows
+  installer_windows:
+    needs: build
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Windows build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: hh-parser-windows
+          path: dist
+
+      # ✅ Ставим Inno Setup через Chocolatey
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      - name: Build installer (Inno Setup)
+        run: iscc hh-parser.iss
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: hh-parser-setup-windows
+          path: dist-installer/HH-Parser-Setup.exe
