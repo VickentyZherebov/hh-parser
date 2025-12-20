@@ -28,7 +28,7 @@ jobs:
 
       - name: Build
         run: |
-          flet build ${{ matrix.os == 'windows-latest' && 'windows' || 'macos' }} app.py
+          flet build ${{ matrix.os == 'windows-latest' && 'windows' || 'macos' }} main.py
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
