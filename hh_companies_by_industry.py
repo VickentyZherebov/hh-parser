@@ -285,4 +285,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import multiprocessing
+    multiprocessing.freeze_support()
+
+    ft.app(target=main)
