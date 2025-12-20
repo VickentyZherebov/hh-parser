@@ -1,76 +1,52 @@
-# Название workflow (так будет отображаться во вкладке Actions)
 name: Build desktop apps
 
-# Когда запускать workflow
 on:
-  # Автозапуск на каждый push в ветку main
   push:
     branches: ["main"]
-
-  # Возможность запустить вручную из GitHub UI: Actions → Run workflow
   workflow_dispatch: {}
 
 jobs:
-  # Один job "build", который будет выполняться в двух ОС (матрица ниже)
   build:
-    # Матрица: GitHub создаст 2 параллельных прогона job'а:
-    #  - один на Windows runner
-    #  - один на macOS runner
     strategy:
+      fail-fast: false  # <— важно: не отменять macOS если Windows упал
       matrix:
         os: [windows-latest, macos-latest]
 
-    # На какой ОС запускать текущий прогон job'а
     runs-on: ${{ matrix.os }}
 
     steps:
-      # 1) Забираем код репозитория на runner
-      # Без этого шаги ниже не увидят твои файлы (main.py, requirements.txt и т.д.)
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2) Ставим Python нужной версии на runner
-      # Лучше фиксировать версию, чтобы сборки были воспроизводимыми.
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      # 3) Устанавливаем зависимости проекта
-      # В requirements.txt у тебя должны быть flet, requests, bs4 и т.д.
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 4) Собираем desktop-приложение
-      # Важно: Flet build должен запускаться на ОС, для которой делаем сборку:
-      #  - windows build на Windows runner
-      #  - macos build на macOS runner
-      #
-      # --module-name main значит: точка входа — Python-модуль "main",
-      # то есть файл main.py в корне репозитория.
-      #
-      # Если позже перенесёшь main.py в папку src/, тогда станет --module-name src.main
-      - name: Build
-        shell: bash
+      # ---- Windows build (чинит UnicodeEncodeError в rich) ----
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            flet build windows --module-name main
-          else
-            flet build macos --module-name main
-          fi
+          chcp 65001
+          [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+          $env:PYTHONUTF8 = "1"
+          $env:PYTHONIOENCODING = "utf-8"
+          flet build windows --module-name main
 
-      # 5) Загружаем результат сборки как Artifact
-      # Артефакты появляются на странице конкретного workflow run'а внизу.
-      # Их можно скачать zip'ом (для Windows и macOS отдельно).
-      #
-      # Мы грузим всю папку build/, потому что Flet кладёт результат сборки туда
-      # (внутри будут подпапки/файлы, зависящие от платформы).
+      # ---- macOS build ----
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          flet build macos --module-name main
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          # Имя артефакта будет разным для Windows и macOS,
-          # чтобы было удобно скачивать и не путать.
           name: hh-parser-${{ matrix.os }}
           path: build/
