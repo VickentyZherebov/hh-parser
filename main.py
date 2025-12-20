@@ -413,4 +413,8 @@ def main(page: ft.Page):
 
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()
+
+    import flet as ft
     ft.app(target=main)
