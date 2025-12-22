@@ -18,7 +18,11 @@ install:
 
 build_script:
   - export PATH="$HOME/Library/Python/3.9/bin:$PATH"
-  - flet pack main.py --name "HH-Parser" --icon assets/icon.png
+  - if [[ "$APPVEYOR_BUILD_WORKER_IMAGE" == macos* ]]; then
+      flet pack main.py --name "HH-Parser" --icon assets/icon.icns;
+    else
+      flet pack main.py --name "HH-Parser" --icon assets/icon.png;
+    fi
 
 artifacts:
   - path: dist/**
