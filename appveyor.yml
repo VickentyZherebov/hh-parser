@@ -12,7 +12,7 @@ install:
   - python3 -m pip install --upgrade pip
   - python3 -m pip install -r requirements.txt
   - python3 -m pip install flet
-  # добавляем user bin в PATH, чтобы команда "flet" нашлась
+  - python3 -m pip install pyinstaller
   - export PATH="$HOME/Library/Python/3.9/bin:$PATH"
   - flet --version
 
