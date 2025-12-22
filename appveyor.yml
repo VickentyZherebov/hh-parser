@@ -8,12 +8,22 @@ environment:
     secure: Kv9GbGkVnyPgbPrFY29V13NLA67SvJcU7JeDRZuhDbRRla9dU++3+F6VioJTIC
 
 install:
-  - python -m pip install --upgrade pip
-  - pip install -r requirements.txt
-  - pip install flet
+  - sh: |
+      python3 --version
+      python3 -m pip install --upgrade pip
+      python3 -m pip install -r requirements.txt
+      python3 -m pip install flet
+  - cmd: |
+      C:\Python311\python.exe --version
+      C:\Python311\python.exe -m pip install --upgrade pip
+      C:\Python311\python.exe -m pip install -r requirements.txt
+      C:\Python311\python.exe -m pip install flet
 
 build_script:
-  - flet pack main.py --name "HH-Parser" --icon assets/icon.png
+  - sh: |
+      python3 -m flet pack main.py --name "HH-Parser" --icon assets/icon.png
+  - cmd: |
+      C:\Python311\python.exe -m flet pack main.py --name "HH-Parser" --icon assets/icon.png
 
 artifacts:
   - path: dist/**
