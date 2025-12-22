@@ -1,0 +1,28 @@
+image:
+  - macos-sonoma
+  - ubuntu2204
+  - windows2022
+
+environment:
+  GITHUB_TOKEN:
+    secure: Kv9GbGkVnyPgbPrFY29V13NLA67SvJcU7JeDRZuhDbRRla9dU++3+F6VioJTIC
+
+install:
+  - python -m pip install --upgrade pip
+  - pip install -r requirements.txt
+  - pip install flet
+
+build_script:
+  - flet pack main.py --name "HH-Parser" --icon assets/icon.png
+
+artifacts:
+  - path: dist/**
+    name: HH-Parser
+
+deploy:
+  provider: GitHub
+  auth_token:
+    secure: Kv9GbGkVnyPgbPrFY29V13NLA67SvJcU7JeDRZuhDbRRla9dU++3+F6VioJTIC
+  artifact: HH-Parser
+  on:
+    APPVEYOR_REPO_TAG: true

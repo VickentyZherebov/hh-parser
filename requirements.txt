@@ -1,4 +1,5 @@
 requests
 beautifulsoup4
 lxml
-flet
+flet==0.28.3
+flet-desktop==0.28.3
