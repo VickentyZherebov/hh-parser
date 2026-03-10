@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HH-Parser — Сбор базы компаний с HeadHunter</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏢</text></svg>">
+</head>
+<body>
+
+<header class="header">
+    <h1>HH-Parser</h1>
+    <p>Собирай базу компаний с HeadHunter по индустриям за пару кликов</p>
+    <div class="version-badge">v{{ version }}</div>
+</header>
+
+<main class="container">
+
+    <!-- Статус -->
+    <div id="statusBar" class="status-bar">
+        <div class="spinner" id="statusSpinner"></div>
+        <span id="statusText"></span>
+    </div>
+
+    <!-- Прогресс -->
+    <div id="progressBar" class="progress-bar" style="margin-bottom: 20px;">
+        <div class="progress-bar-fill" id="progressFill"></div>
+    </div>
+
+    <!-- Фильтры -->
+    <div class="card">
+        <div class="card-title">Фильтры</div>
+        <div class="filters-grid">
+            <div class="form-group">
+                <label for="minVac">Минимум вакансий</label>
+                <input type="number" id="minVac" value="10" min="1">
+            </div>
+            <div class="form-group">
+                <label for="area">Регион (area ID)</label>
+                <input type="number" id="area" value="113" min="1">
+            </div>
+            <div class="form-group">
+                <label>&nbsp;</label>
+                <div class="toggle-row">
+                    <label class="toggle">
+                        <input type="checkbox" id="onlyOpen" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span>Только с открытыми вакансиями</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Индустрии -->
+    <div class="card">
+        <div class="card-title">Индустрии</div>
+
+        <div class="industries-toolbar">
+            <input type="text" id="searchIndustries" placeholder="Поиск по индустриям...">
+            <button class="btn-sm" onclick="selectAll()">Выбрать все</button>
+            <button class="btn-sm" onclick="clearAll()">Снять все</button>
+        </div>
+
+        <div id="industriesList" class="industries-list">
+            <div class="loading-placeholder">
+                <div class="spinner"></div>
+                <span>Загрузка индустрий...</span>
+            </div>
+        </div>
+
+        <div class="selected-count">
+            Выбрано: <span id="selectedCount">0</span>
+        </div>
+    </div>
+
+    <!-- Кнопки -->
+    <div class="card">
+        <div class="actions">
+            <button class="btn btn-primary" id="btnStart" onclick="startScrape()" disabled>
+                <span id="btnStartText">Собрать данные</span>
+            </button>
+            <button class="btn btn-secondary" id="btnCSV" onclick="downloadCSV()" disabled>
+                Скачать CSV
+            </button>
+        </div>
+    </div>
+
+    <!-- Результаты -->
+    <div class="card results-card" id="resultsCard">
+        <div class="results-header">
+            <div class="results-count">Найдено компаний: <span id="resultsCount">0</span></div>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Компания</th>
+                        <th>Вакансии</th>
+                        <th>Индустрия</th>
+                    </tr>
+                </thead>
+                <tbody id="resultsBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+</main>
+
+<footer class="footer">
+    HH-Parser &mdash; инструмент для сбора базы компаний с <a href="https://hh.ru" target="_blank">hh.ru</a>
+</footer>
+
+<script>
+    // ---------- Состояние ----------
+    let industries = [];
+    let selectedSlugs = new Set();
+    let lastResult = null;
+    let isRunning = false;
+
+    // ---------- Инициализация ----------
+    document.addEventListener('DOMContentLoaded', loadIndustries);
+    document.getElementById('searchIndustries').addEventListener('input', renderIndustries);
+
+    // ---------- Загрузка индустрий ----------
+    async function loadIndustries() {
+        try {
+            const res = await fetch('/api/industries');
+            const data = await res.json();
+            if (!data.ok) {
+                showStatus(data.error, 'error');
+                return;
+            }
+            industries = data.industries;
+            renderIndustries();
+        } catch (e) {
+            showStatus('Не удалось загрузить индустрии: ' + e.message, 'error');
+        }
+    }
+
+    // ---------- Отрисовка индустрий ----------
+    function renderIndustries() {
+        const filter = document.getElementById('searchIndustries').value.toLowerCase().trim();
+        const list = document.getElementById('industriesList');
+        list.innerHTML = '';
+
+        const filtered = industries.filter(i => !filter || i.name.toLowerCase().includes(filter));
+
+        if (filtered.length === 0 && industries.length === 0) {
+            list.innerHTML = '<div class="loading-placeholder"><div class="spinner"></div><span>Загрузка...</span></div>';
+            return;
+        }
+
+        if (filtered.length === 0) {
+            list.innerHTML = '<div class="loading-placeholder"><span>Ничего не найдено</span></div>';
+            return;
+        }
+
+        filtered.forEach(ind => {
+            const label = document.createElement('label');
+            label.className = 'industry-item';
+
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = selectedSlugs.has(ind.slug_url);
+            cb.addEventListener('change', () => {
+                if (cb.checked) {
+                    selectedSlugs.add(ind.slug_url);
+                } else {
+                    selectedSlugs.delete(ind.slug_url);
+                }
+                updateSelectedCount();
+            });
+
+            const span = document.createElement('span');
+            span.textContent = ind.name;
+
+            label.appendChild(cb);
+            label.appendChild(span);
+            list.appendChild(label);
+        });
+
+        updateSelectedCount();
+    }
+
+    function selectAll() {
+        industries.forEach(i => selectedSlugs.add(i.slug_url));
+        renderIndustries();
+    }
+
+    function clearAll() {
+        selectedSlugs.clear();
+        renderIndustries();
+    }
+
+    function updateSelectedCount() {
+        document.getElementById('selectedCount').textContent = selectedSlugs.size;
+        document.getElementById('btnStart').disabled = selectedSlugs.size === 0 || isRunning;
+    }
+
+    // ---------- Статус ----------
+    function showStatus(text, type = '') {
+        const bar = document.getElementById('statusBar');
+        const spinner = document.getElementById('statusSpinner');
+        const textEl = document.getElementById('statusText');
+
+        bar.className = 'status-bar visible' + (type ? ' ' + type : '');
+        textEl.textContent = text;
+        spinner.style.display = type === '' ? 'block' : 'none';
+    }
+
+    function hideStatus() {
+        document.getElementById('statusBar').className = 'status-bar';
+    }
+
+    function showProgress(visible) {
+        const bar = document.getElementById('progressBar');
+        bar.className = visible ? 'progress-bar visible' : 'progress-bar';
+    }
+
+    function setProgress(pct) {
+        document.getElementById('progressFill').style.width = pct + '%';
+    }
+
+    // ---------- Парсинг ----------
+    async function startScrape() {
+        if (isRunning || selectedSlugs.size === 0) return;
+
+        isRunning = true;
+        document.getElementById('btnStart').disabled = true;
+        document.getElementById('btnCSV').disabled = true;
+        document.getElementById('resultsCard').className = 'card results-card';
+        lastResult = null;
+
+        showStatus('Парсим компании... Это может занять несколько минут.');
+        showProgress(true);
+        setProgress(30);
+
+        const body = {
+            industry_slugs: Array.from(selectedSlugs),
+            min_vacancies: parseInt(document.getElementById('minVac').value) || 10,
+            area: parseInt(document.getElementById('area').value) || 113,
+            only_open: document.getElementById('onlyOpen').checked,
+        };
+
+        try {
+            const res = await fetch('/api/scrape', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body),
+            });
+            const data = await res.json();
+
+            setProgress(100);
+
+            if (!data.ok) {
+                showStatus(data.error, 'error');
+                return;
+            }
+
+            lastResult = {body, data};
+            showStatus(`Готово! Найдено ${data.companies_count} компаний.`, 'success');
+            renderResults(data);
+            document.getElementById('btnCSV').disabled = false;
+
+        } catch (e) {
+            showStatus('Ошибка: ' + e.message, 'error');
+        } finally {
+            isRunning = false;
+            document.getElementById('btnStart').disabled = selectedSlugs.size === 0;
+            setTimeout(() => showProgress(false), 1000);
+        }
+    }
+
+    // ---------- Результаты ----------
+    function renderResults(data) {
+        const card = document.getElementById('resultsCard');
+        card.className = 'card results-card visible';
+
+        document.getElementById('resultsCount').textContent = data.companies_count;
+
+        const tbody = document.getElementById('resultsBody');
+        tbody.innerHTML = '';
+
+        // Сортируем по убыванию вакансий
+        const sorted = [...data.companies].sort((a, b) => b.vacancies - a.vacancies);
+
+        sorted.forEach(c => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><a href="${c.url}" target="_blank">${escapeHtml(c.name)}</a></td>
+                <td><span class="vacancies-badge">${c.vacancies}</span></td>
+                <td>${escapeHtml(c.industry_name)}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // ---------- Скачать CSV ----------
+    async function downloadCSV() {
+        if (!lastResult) return;
+
+        document.getElementById('btnCSV').disabled = true;
+        showStatus('Формируем CSV...');
+
+        try {
+            const res = await fetch('/api/scrape/csv', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(lastResult.body),
+            });
+
+            if (!res.ok) {
+                const data = await res.json();
+                showStatus(data.error || 'Ошибка скачивания', 'error');
+                return;
+            }
+
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'hh_companies.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+
+            showStatus('CSV скачан!', 'success');
+        } catch (e) {
+            showStatus('Ошибка: ' + e.message, 'error');
+        } finally {
+            document.getElementById('btnCSV').disabled = false;
+        }
+    }
+</script>
+
+</body>
+</html>
