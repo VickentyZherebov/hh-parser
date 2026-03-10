@@ -2,7 +2,10 @@
 __pycache__/
 *.pyc
 .env
+.DS_Store
 scrapped_data/
 *.json
 .vscode/
 .pytest_cache/
+build/
+dist/
