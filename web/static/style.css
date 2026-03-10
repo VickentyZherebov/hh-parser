@@ -480,6 +480,60 @@ td a:hover {
 
 .footer a:hover { text-decoration: underline; }
 
+/* ---------- Лог парсинга ---------- */
+.scrape-log-card {
+    display: none;
+}
+
+.scrape-log-card.visible { display: block; }
+
+.scrape-log {
+    background: #0d0f14;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px 16px;
+    max-height: 260px;
+    overflow-y: auto;
+    font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+    font-size: 0.8rem;
+    line-height: 1.7;
+}
+
+.scrape-log::-webkit-scrollbar {
+    width: 6px;
+}
+
+.scrape-log::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.scrape-log::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+}
+
+.log-line {
+    color: var(--text-muted);
+    padding: 1px 0;
+}
+
+.log-line .log-time {
+    color: #555a6e;
+    margin-right: 8px;
+}
+
+.log-line.log-info {
+    color: var(--accent);
+}
+
+.log-line.log-success {
+    color: var(--green);
+}
+
+.log-line.log-error {
+    color: var(--red);
+}
+
 /* ---------- Загрузка индустрий ---------- */
 .loading-placeholder {
     display: flex;

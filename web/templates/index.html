@@ -89,6 +89,12 @@
         </div>
     </div>
 
+    <!-- Лог парсинга -->
+    <div class="card scrape-log-card" id="logCard">
+        <div class="card-title">Лог парсинга</div>
+        <div class="scrape-log" id="scrapeLog"></div>
+    </div>
+
     <!-- Результаты -->
     <div class="card results-card" id="resultsCard">
         <div class="results-header">
@@ -225,7 +231,28 @@
         document.getElementById('progressFill').style.width = pct + '%';
     }
 
-    // ---------- Парсинг ----------
+    // ---------- Лог ----------
+    function showLog(visible) {
+        document.getElementById('logCard').className = visible ? 'card scrape-log-card visible' : 'card scrape-log-card';
+    }
+
+    function clearLog() {
+        document.getElementById('scrapeLog').innerHTML = '';
+    }
+
+    function addLog(text, type = '') {
+        const log = document.getElementById('scrapeLog');
+        const line = document.createElement('div');
+        line.className = 'log-line' + (type ? ' log-' + type : '');
+
+        const time = new Date().toLocaleTimeString('ru-RU');
+        line.innerHTML = `<span class="log-time">${time}</span> ${escapeHtml(text)}`;
+
+        log.appendChild(line);
+        log.scrollTop = log.scrollHeight;
+    }
+
+    // ---------- Парсинг (SSE) ----------
     async function startScrape() {
         if (isRunning || selectedSlugs.size === 0) return;
 
@@ -235,9 +262,12 @@
         document.getElementById('resultsCard').className = 'card results-card';
         lastResult = null;
 
-        showStatus('Парсим компании... Это может занять несколько минут.');
+        clearLog();
+        showLog(true);
+        showStatus('Запускаем парсинг...');
         showProgress(true);
-        setProgress(30);
+        setProgress(0);
+        addLog('Парсинг запущен...', 'info');
 
         const body = {
             industry_slugs: Array.from(selectedSlugs),
@@ -247,31 +277,77 @@
         };
 
         try {
-            const res = await fetch('/api/scrape', {
+            const res = await fetch('/api/scrape/stream', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(body),
             });
-            const data = await res.json();
 
-            setProgress(100);
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
 
-            if (!data.ok) {
-                showStatus(data.error, 'error');
-                return;
+            while (true) {
+                const {done, value} = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, {stream: true});
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+
+                for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue;
+                    const jsonStr = line.slice(6);
+                    if (!jsonStr) continue;
+
+                    try {
+                        const event = JSON.parse(jsonStr);
+
+                        if (event.type === 'progress') {
+                            showStatus(event.status);
+
+                            // Прогресс: комбинируем индустрию и страницу
+                            const indPct = ((event.industry_idx - 1) / event.industries_total) * 100;
+                            let pagePct = 0;
+                            if (event.pages_total > 0) {
+                                pagePct = (event.page / event.pages_total) * (100 / event.industries_total);
+                            }
+                            setProgress(Math.min(indPct + pagePct, 99));
+
+                            // Логируем только смену страниц (не дублируем начало индустрии)
+                            if (event.page > 0) {
+                                addLog(event.status);
+                            } else {
+                                addLog(event.status, 'info');
+                            }
+                        }
+
+                        if (event.type === 'result') {
+                            setProgress(100);
+                            lastResult = {body, data: event};
+                            showStatus(`Готово! Найдено ${event.companies_count} компаний.`, 'success');
+                            addLog(`Парсинг завершён. Найдено компаний: ${event.companies_count}`, 'success');
+                            renderResults(event);
+                            document.getElementById('btnCSV').disabled = false;
+                        }
+
+                        if (event.type === 'error') {
+                            showStatus(event.error, 'error');
+                            addLog(`Ошибка: ${event.error}`, 'error');
+                        }
+                    } catch (parseErr) {
+                        // пропускаем некорректные строки
+                    }
+                }
             }
-
-            lastResult = {body, data};
-            showStatus(`Готово! Найдено ${data.companies_count} компаний.`, 'success');
-            renderResults(data);
-            document.getElementById('btnCSV').disabled = false;
 
         } catch (e) {
             showStatus('Ошибка: ' + e.message, 'error');
+            addLog('Ошибка соединения: ' + e.message, 'error');
         } finally {
             isRunning = false;
             document.getElementById('btnStart').disabled = selectedSlugs.size === 0;
-            setTimeout(() => showProgress(false), 1000);
+            setTimeout(() => showProgress(false), 1500);
         }
     }
 
@@ -285,7 +361,6 @@
         const tbody = document.getElementById('resultsBody');
         tbody.innerHTML = '';
 
-        // Сортируем по убыванию вакансий
         const sorted = [...data.companies].sort((a, b) => b.vacancies - a.vacancies);
 
         sorted.forEach(c => {

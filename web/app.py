@@ -3,6 +3,7 @@ FastAPI-приложение: веб-версия HH-парсера.
 """
 
 import asyncio
+import queue
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -87,7 +88,7 @@ async def get_industries():
 
 @app.post("/api/scrape")
 async def scrape(req: ScrapeRequest):
-    """Запускает парсинг и возвращает результат JSON."""
+    """Запускает парсинг и возвращает результат JSON (без прогресса)."""
     try:
         industries = await asyncio.to_thread(_load_industries)
     except Exception as e:
@@ -130,6 +131,121 @@ async def scrape(req: ScrapeRequest):
             for c in all_companies
         ],
     }
+
+
+@app.post("/api/scrape/stream")
+async def scrape_stream(req: ScrapeRequest):
+    """
+    SSE-эндпоинт: парсит с прогрессом в реальном времени.
+    Отправляет события:
+      - type=progress  — прогресс по страницам/индустриям
+      - type=result    — финальный результат
+      - type=error     — ошибка
+    """
+    try:
+        industries = await asyncio.to_thread(_load_industries)
+    except Exception as e:
+        async def error_gen():
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)}, ensure_ascii=False)}\n\n"
+        return StreamingResponse(error_gen(), media_type="text/event-stream")
+
+    slug_set = set(req.industry_slugs)
+    chosen = [i for i in industries if i.slug_url in slug_set]
+
+    if not chosen:
+        async def error_gen():
+            yield f"data: {json.dumps({'type': 'error', 'error': 'Не выбрано ни одной индустрии.'}, ensure_ascii=False)}\n\n"
+        return StreamingResponse(error_gen(), media_type="text/event-stream")
+
+    # Очередь для передачи событий из синхронного потока в async-генератор
+    q: queue.Queue = queue.Queue()
+
+    def worker():
+        """Синхронный воркер — парсит и кладёт события в очередь."""
+        all_companies = []
+        total_industries = len(chosen)
+
+        try:
+            for idx, ind in enumerate(chosen, start=1):
+                q.put({
+                    "type": "progress",
+                    "industry_idx": idx,
+                    "industries_total": total_industries,
+                    "industry_name": ind.name,
+                    "page": 0,
+                    "pages_total": 0,
+                    "companies_found": 0,
+                    "companies_added": 0,
+                    "status": f"Индустрия {idx}/{total_industries}: {ind.name}",
+                })
+
+                def on_progress(p):
+                    q.put({
+                        "type": "progress",
+                        "industry_idx": idx,
+                        "industries_total": total_industries,
+                        "industry_name": p.get("industry_name", ind.name),
+                        "page": p.get("page", 0),
+                        "pages_total": p.get("pages_total", 0),
+                        "companies_found": p.get("companies_found_total", 0),
+                        "companies_added": p.get("companies_added_total", 0),
+                        "status": (
+                            f"Индустрия {idx}/{total_industries}: {ind.name} | "
+                            f"Страница {p.get('page', '?')}/{p.get('pages_total', '?')} | "
+                            f"Найдено: {p.get('companies_found_total', 0)} | "
+                            f"В итог: {p.get('companies_added_total', 0)}"
+                        ),
+                    })
+
+                companies = scrape_companies(
+                    ind,
+                    min_vacancies=req.min_vacancies,
+                    area=req.area,
+                    only_with_open_vacancies=req.only_open,
+                    progress_cb=on_progress,
+                )
+                all_companies.extend(companies)
+
+            # Финальный результат
+            q.put({
+                "type": "result",
+                "companies_count": len(all_companies),
+                "companies": [
+                    {
+                        "name": c.name,
+                        "url": c.url,
+                        "vacancies": c.vacancies,
+                        "industry_name": c.industry_name,
+                    }
+                    for c in all_companies
+                ],
+            })
+        except HHBlockedError as e:
+            q.put({"type": "error", "error": str(e)})
+        except Exception as e:
+            logger.exception("Ошибка парсинга")
+            q.put({"type": "error", "error": f"Ошибка парсинга: {e}"})
+        finally:
+            q.put(None)  # сигнал завершения
+
+    async def event_generator():
+        # Запускаем воркер в отдельном потоке
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(None, worker)
+
+        while True:
+            # Ждём событие из очереди без блокировки event loop
+            try:
+                event = await asyncio.to_thread(q.get, timeout=120)
+            except Exception:
+                break
+
+            if event is None:
+                break
+
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.post("/api/scrape/csv")
