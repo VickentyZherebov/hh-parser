@@ -2,15 +2,16 @@ import json
 import re
 import time
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from typing import Callable, Optional
 from urllib.parse import urljoin, urlparse, parse_qs, urlencode, urlunparse
 
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, SoupStrainer
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 logger = logging.getLogger(__name__)
 
@@ -91,19 +92,25 @@ def fetch_html(url: str, session: requests.Session, timeout: int = 25) -> str:
     raise last_exc or RuntimeError(f"Не удалось загрузить {url}")
 
 
-def soupify(html: str) -> BeautifulSoup:
-    return BeautifulSoup(html, "lxml")
+def soupify(html: str, parse_only: Optional[SoupStrainer] = None) -> BeautifulSoup:
+    """Парсит HTML. parse_only позволяет ограничить парсинг нужными тегами для ускорения."""
+    return BeautifulSoup(html, "lxml", parse_only=parse_only)
+
+
+# Фильтры SoupStrainer — парсим только нужные теги, ускоряя обработку HTML
+_STRAINER_LINKS = SoupStrainer("a")
 
 
 def parse_industries(catalog_html: str) -> list[Industry]:
     """
     На странице каталога индустрии представлены ссылками вида:
     /employers_company/<slug>
+    Использует SoupStrainer для парсинга только тегов <a> — быстрее на больших страницах.
     """
-    soup = soupify(catalog_html)
+    soup = soupify(catalog_html, parse_only=_STRAINER_LINKS)
 
     industries: dict[str, str] = {}  # name -> abs_url
-    for a in soup.select("a[href]"):
+    for a in soup.find_all("a", href=True):
         href = a.get("href", "").strip()
         text = a.get_text(" ", strip=True)
         if not text:
@@ -141,13 +148,18 @@ def with_query(url: str, **params) -> str:
     return urlunparse((p.scheme, p.netloc, p.path, p.params, new_q, p.fragment))
 
 
-def extract_max_page(soup: BeautifulSoup) -> int:
+def extract_max_page(soup_or_html) -> int:
     """
     Внизу страницы есть пагинация со ссылками, где встречается page=<N>.
-    Берём максимум.
+    Берём максимум. Принимает BeautifulSoup или строку HTML.
     """
+    if isinstance(soup_or_html, str):
+        soup = soupify(soup_or_html, parse_only=_STRAINER_LINKS)
+    else:
+        soup = soup_or_html
+
     max_page = 0
-    for a in soup.select("a[href]"):
+    for a in soup.find_all("a", href=True):
         href = a.get("href", "")
         if "page=" not in href:
             continue
@@ -212,16 +224,32 @@ def parse_companies_from_industry_page(html: str, industry_name: str, industry_u
     return companies
 
 
+def _make_session() -> requests.Session:
+    """Создаёт HTTP-сессию с нужными заголовками."""
+    session = requests.Session()
+    session.headers.update(
+        {
+            "User-Agent": UA,
+            "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
+        }
+    )
+    return session
+
+
 def scrape_companies(
     industry: Industry,
     min_vacancies: int,
     area: int = 113,
     only_with_open_vacancies: bool = True,
     progress_cb: Optional[Callable[[dict], None]] = None,
+    session: Optional[requests.Session] = None,
 ) -> list[Company]:
     """
     Обходит все страницы выбранной индустрии и собирает компании.
     area=113 — Россия (можешь поменять на нужный area).
+
+    session — можно передать готовую сессию (для параллельного парсинга
+    нескольких индустрий в разных потоках, каждый со своей сессией).
 
     progress_cb вызывается раз в страницу:
       {
@@ -232,13 +260,8 @@ def scrape_companies(
         "companies_added_total": int,      # прошло фильтр и добавлено (после дедуп)
       }
     """
-    session = requests.Session()
-    session.headers.update(
-        {
-            "User-Agent": UA,
-            "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
-        }
-    )
+    if session is None:
+        session = _make_session()
 
     # На hh есть переключатель "компании с открытыми вакансиями"
     url0 = industry.slug_url
@@ -248,16 +271,22 @@ def scrape_companies(
         url0 = with_query(url0, vacanciesRequired="true")
 
     html0 = fetch_html(url0, session)
-    soup0 = soupify(html0)
-    max_page = extract_max_page(soup0)
+    # Парсим первую страницу: для пагинации используем SoupStrainer (только ссылки),
+    # а для компаний — полный парсинг (нужны соседние элементы)
+    max_page = extract_max_page(html0)
     pages_total = max_page + 1
 
     out: dict[str, Company] = {}  # url -> Company (дедуп по url)
     found_total = 0  # сколько компаний распарсили со всех страниц (до фильтра)
 
-    for page in range(0, pages_total):
-        url = with_query(url0, page=page)
-        html = fetch_html(url, session)
+    for page_num in range(0, pages_total):
+        # Первую страницу уже загрузили — повторно не качаем
+        if page_num == 0:
+            html = html0
+        else:
+            url = with_query(url0, page=page_num)
+            html = fetch_html(url, session)
+
         companies = parse_companies_from_industry_page(html, industry.name, industry.slug_url)
 
         found_total += len(companies)
@@ -271,7 +300,7 @@ def scrape_companies(
                 progress_cb(
                     {
                         "industry_name": industry.name,
-                        "page": page + 1,
+                        "page": page_num + 1,
                         "pages_total": pages_total,
                         "companies_found_total": found_total,
                         "companies_added_total": len(out),
@@ -281,15 +310,64 @@ def scrape_companies(
                 # UI-коллбек не должен валить парсер
                 pass
 
-        # небольшая пауза, чтобы не долбить HH
+        # Небольшая пауза, чтобы не долбить HH (rate limiting)
         time.sleep(0.35)
 
     return list(out.values())
 
 
+def scrape_companies_parallel(
+    industries: list[Industry],
+    min_vacancies: int,
+    area: int = 113,
+    only_with_open_vacancies: bool = True,
+    progress_cb: Optional[Callable[[dict], None]] = None,
+    max_workers: int = 4,
+) -> list[Company]:
+    """
+    Параллельно парсит несколько индустрий в разных потоках.
+    Каждый поток использует свою HTTP-сессию и соблюдает rate limiting.
+    progress_cb вызывается из разных потоков — должен быть потокобезопасным.
+
+    Возвращает общий список компаний (с дедупликацией по URL).
+    """
+    if not industries:
+        return []
+
+    # Если одна индустрия — параллелить нечего
+    if len(industries) == 1:
+        return scrape_companies(
+            industries[0], min_vacancies, area,
+            only_with_open_vacancies, progress_cb,
+        )
+
+    all_companies: dict[str, Company] = {}  # url -> Company (дедуп)
+    import threading
+    lock = threading.Lock()
+
+    def worker(ind: Industry) -> list[Company]:
+        """Воркер для одной индустрии — своя сессия."""
+        sess = _make_session()
+        return scrape_companies(
+            ind, min_vacancies, area,
+            only_with_open_vacancies, progress_cb,
+            session=sess,
+        )
+
+    effective_workers = min(max_workers, len(industries))
+    with ThreadPoolExecutor(max_workers=effective_workers) as executor:
+        futures = {executor.submit(worker, ind): ind for ind in industries}
+        for future in as_completed(futures):
+            companies = future.result()  # исключения пробрасываются наверх
+            with lock:
+                for c in companies:
+                    all_companies[c.url] = c
+
+    return list(all_companies.values())
+
+
 def main():
-    session = requests.Session()
-    session.headers.update({"User-Agent": UA, "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8"})
+    session = _make_session()
 
     print("Загружаю список индустрий...")
     catalog_html = fetch_html(CATALOG_URL, session)

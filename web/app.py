@@ -20,12 +20,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from hh_companies_by_industry import (
     __version__,
     Industry,
+    Company,
     fetch_html,
     parse_industries,
     scrape_companies,
+    scrape_companies_parallel,
     CATALOG_URL,
     UA,
     HHBlockedError,
+    _make_session,
 )
 
 import requests as req_lib
@@ -44,6 +47,9 @@ templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 # Кэш индустрий (загружается один раз)
 _industries_cache: list[Industry] = []
+
+# Кэш последнего результата парсинга — чтобы «Скачать CSV» не парсил заново
+_last_scrape_result: Optional[dict] = None
 
 
 def _load_industries() -> list[Industry]:
@@ -86,9 +92,33 @@ async def get_industries():
         return {"ok": False, "error": f"Ошибка загрузки индустрий: {e}"}
 
 
+def _build_result_dict(companies: list[Company]) -> dict:
+    """Формирует словарь результата из списка компаний."""
+    return {
+        "ok": True,
+        "companies_count": len(companies),
+        "companies": [
+            {
+                "name": c.name,
+                "url": c.url,
+                "vacancies": c.vacancies,
+                "industry_name": c.industry_name,
+            }
+            for c in companies
+        ],
+    }
+
+
+def _save_to_cache(result: dict) -> None:
+    """Сохраняет результат парсинга в кэш."""
+    global _last_scrape_result
+    _last_scrape_result = result
+
+
 @app.post("/api/scrape")
 async def scrape(req: ScrapeRequest):
-    """Запускает парсинг и возвращает результат JSON (без прогресса)."""
+    """Запускает парсинг и возвращает результат JSON (без прогресса).
+    Использует параллельный парсинг индустрий для ускорения."""
     try:
         industries = await asyncio.to_thread(_load_industries)
     except Exception as e:
@@ -100,43 +130,30 @@ async def scrape(req: ScrapeRequest):
     if not chosen:
         return {"ok": False, "error": "Не выбрано ни одной индустрии."}
 
-    all_companies = []
-
     try:
-        for ind in chosen:
-            companies = await asyncio.to_thread(
-                scrape_companies,
-                ind,
-                req.min_vacancies,
-                req.area,
-                req.only_open,
-            )
-            all_companies.extend(companies)
+        all_companies = await asyncio.to_thread(
+            scrape_companies_parallel,
+            chosen,
+            req.min_vacancies,
+            req.area,
+            req.only_open,
+        )
     except HHBlockedError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:
         logger.exception("Ошибка парсинга")
         return {"ok": False, "error": f"Ошибка парсинга: {e}"}
 
-    return {
-        "ok": True,
-        "companies_count": len(all_companies),
-        "companies": [
-            {
-                "name": c.name,
-                "url": c.url,
-                "vacancies": c.vacancies,
-                "industry_name": c.industry_name,
-            }
-            for c in all_companies
-        ],
-    }
+    result = _build_result_dict(all_companies)
+    _save_to_cache(result)
+    return result
 
 
 @app.post("/api/scrape/stream")
 async def scrape_stream(req: ScrapeRequest):
     """
     SSE-эндпоинт: парсит с прогрессом в реальном времени.
+    Несколько индустрий парсятся параллельно в разных потоках (каждый со своей сессией).
     Отправляет события:
       - type=progress  — прогресс по страницам/индустриям
       - type=result    — финальный результат
@@ -157,16 +174,70 @@ async def scrape_stream(req: ScrapeRequest):
             yield f"data: {json.dumps({'type': 'error', 'error': 'Не выбрано ни одной индустрии.'}, ensure_ascii=False)}\n\n"
         return StreamingResponse(error_gen(), media_type="text/event-stream")
 
-    # Очередь для передачи событий из синхронного потока в async-генератор
+    # Очередь для передачи событий из синхронных потоков в async-генератор
     q: queue.Queue = queue.Queue()
 
     def worker():
-        """Синхронный воркер — парсит и кладёт события в очередь."""
-        all_companies = []
-        total_industries = len(chosen)
+        """
+        Запускает параллельный парсинг индустрий.
+        Каждая индустрия парсится в своём потоке со своей сессией.
+        Прогресс со всех потоков идёт в общую очередь.
+        """
+        import threading
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        try:
-            for idx, ind in enumerate(chosen, start=1):
+        total_industries = len(chosen)
+        all_companies: dict[str, Company] = {}  # url -> Company (дедуп)
+        lock = threading.Lock()
+
+        # Счётчик завершённых индустрий для отслеживания общего прогресса
+        completed_count = [0]
+
+        def scrape_one(idx: int, ind: Industry) -> list[Company]:
+            """Парсит одну индустрию в отдельном потоке."""
+            sess = _make_session()
+
+            q.put({
+                "type": "progress",
+                "industry_idx": idx,
+                "industries_total": total_industries,
+                "industry_name": ind.name,
+                "page": 0,
+                "pages_total": 0,
+                "companies_found": 0,
+                "companies_added": 0,
+                "status": f"Индустрия {idx}/{total_industries}: {ind.name} — начало",
+            })
+
+            def on_progress(p):
+                q.put({
+                    "type": "progress",
+                    "industry_idx": idx,
+                    "industries_total": total_industries,
+                    "industry_name": p.get("industry_name", ind.name),
+                    "page": p.get("page", 0),
+                    "pages_total": p.get("pages_total", 0),
+                    "companies_found": p.get("companies_found_total", 0),
+                    "companies_added": p.get("companies_added_total", 0),
+                    "status": (
+                        f"Индустрия {idx}/{total_industries}: {ind.name} | "
+                        f"Страница {p.get('page', '?')}/{p.get('pages_total', '?')} | "
+                        f"Найдено: {p.get('companies_found_total', 0)} | "
+                        f"В итог: {p.get('companies_added_total', 0)}"
+                    ),
+                })
+
+            companies = scrape_companies(
+                ind,
+                min_vacancies=req.min_vacancies,
+                area=req.area,
+                only_with_open_vacancies=req.only_open,
+                progress_cb=on_progress,
+                session=sess,
+            )
+
+            with lock:
+                completed_count[0] += 1
                 q.put({
                     "type": "progress",
                     "industry_idx": idx,
@@ -174,51 +245,38 @@ async def scrape_stream(req: ScrapeRequest):
                     "industry_name": ind.name,
                     "page": 0,
                     "pages_total": 0,
-                    "companies_found": 0,
-                    "companies_added": 0,
-                    "status": f"Индустрия {idx}/{total_industries}: {ind.name}",
+                    "companies_found": len(companies),
+                    "companies_added": len(companies),
+                    "status": (
+                        f"Индустрия {idx}/{total_industries}: {ind.name} — готово "
+                        f"({completed_count[0]}/{total_industries} завершено)"
+                    ),
                 })
 
-                def on_progress(p):
-                    q.put({
-                        "type": "progress",
-                        "industry_idx": idx,
-                        "industries_total": total_industries,
-                        "industry_name": p.get("industry_name", ind.name),
-                        "page": p.get("page", 0),
-                        "pages_total": p.get("pages_total", 0),
-                        "companies_found": p.get("companies_found_total", 0),
-                        "companies_added": p.get("companies_added_total", 0),
-                        "status": (
-                            f"Индустрия {idx}/{total_industries}: {ind.name} | "
-                            f"Страница {p.get('page', '?')}/{p.get('pages_total', '?')} | "
-                            f"Найдено: {p.get('companies_found_total', 0)} | "
-                            f"В итог: {p.get('companies_added_total', 0)}"
-                        ),
-                    })
+            return companies
 
-                companies = scrape_companies(
-                    ind,
-                    min_vacancies=req.min_vacancies,
-                    area=req.area,
-                    only_with_open_vacancies=req.only_open,
-                    progress_cb=on_progress,
-                )
-                all_companies.extend(companies)
+        try:
+            # Параллельный парсинг: до 4 индустрий одновременно
+            max_workers = min(4, total_industries)
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(scrape_one, idx, ind): ind
+                    for idx, ind in enumerate(chosen, start=1)
+                }
+                for future in as_completed(futures):
+                    companies = future.result()
+                    with lock:
+                        for c in companies:
+                            all_companies[c.url] = c
 
             # Финальный результат
+            result_companies = list(all_companies.values())
+            result = _build_result_dict(result_companies)
+            _save_to_cache(result)
             q.put({
                 "type": "result",
-                "companies_count": len(all_companies),
-                "companies": [
-                    {
-                        "name": c.name,
-                        "url": c.url,
-                        "vacancies": c.vacancies,
-                        "industry_name": c.industry_name,
-                    }
-                    for c in all_companies
-                ],
+                "companies_count": result["companies_count"],
+                "companies": result["companies"],
             })
         except HHBlockedError as e:
             q.put({"type": "error", "error": str(e)})
@@ -250,10 +308,18 @@ async def scrape_stream(req: ScrapeRequest):
 
 @app.post("/api/scrape/csv")
 async def scrape_csv(req: ScrapeRequest):
-    """Запускает парсинг и отдаёт результат как CSV-файл."""
-    result = await scrape(req)
+    """
+    Отдаёт результат как CSV-файл.
+    Если есть закэшированный результат последнего парсинга — отдаёт его без повторного парсинга.
+    Иначе запускает парсинг заново.
+    """
+    # Используем кэш, если он есть и содержит данные
+    if _last_scrape_result and _last_scrape_result.get("ok"):
+        result = _last_scrape_result
+    else:
+        result = await scrape(req)
 
-    if not result["ok"]:
+    if not result.get("ok"):
         return result
 
     output = io.StringIO()
