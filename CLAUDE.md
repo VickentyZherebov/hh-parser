@@ -2,72 +2,100 @@
 
 ## Что делает проект
 
-Десктопное GUI-приложение для сбора базы компаний с HeadHunter (hh.ru) по индустриям. Пользователь выбирает индустрии из автоматически загружаемого каталога, настраивает фильтры (минимум вакансий, регион, только с открытыми вакансиями), после чего приложение обходит все страницы пагинации и собирает названия компаний, ссылки и количество вакансий. Результат экспортируется в CSV и/или JSON.
+Инструмент для массового сбора базы компаний с HeadHunter (hh.ru) по индустриям. Три интерфейса:
 
-Также есть CLI-режим в `hh_companies_by_industry.py` — делает то же самое через интерактивный терминал.
+- **Web** — FastAPI + лендинг с real-time логом парсинга (SSE). Задеплоен на Amvera: https://hh-parser.vickenty.amvera.io
+- **Desktop GUI** — Flet-приложение (Windows + macOS)
+- **CLI** — интерактивный терминал (`hh_companies_by_industry.py`)
+
+Пользователь выбирает индустрии, настраивает фильтры (минимум вакансий, регион, только с открытыми вакансиями), парсер обходит все страницы и собирает компании. Результат — CSV и/или JSON.
 
 ## Стек и зависимости
 
-- **Python 3.12** (CI собирает на 3.12; локальный venv может отличаться)
-- **Flet 0.28.3** — кроссплатформенный GUI-фреймворк (на базе Flutter)
-- **requests** — HTTP-клиент для запросов к hh.ru
-- **BeautifulSoup4 + lxml** — парсинг HTML
-- **PyInstaller** — сборка в standalone-исполняемые файлы
-- **Inno Setup** — Windows-инсталлятор (скрипт `installer/hh-parser.iss`)
+- **Python 3.12**
+- **FastAPI + Jinja2 + uvicorn** — веб-версия (`web/requirements.txt`)
+- **Flet 0.28.3** — десктоп GUI (`requirements.txt`)
+- **requests + BeautifulSoup4 + lxml** — HTTP и парсинг HTML
 - **pytest** — юнит-тесты
-
-Зависимости описаны в `requirements.txt` (pyproject.toml нет).
+- **PyInstaller** — сборка standalone
+- **Inno Setup** — Windows-инсталлятор
+- **Docker + Amvera** — деплой
 
 ## Версия
 
-Единый источник версии: `__version__` в `hh_companies_by_industry.py`. Импортируется в `main.py` и отображается в заголовке окна. При релизе также обновить `installer/hh-parser.iss`.
+Единый источник: `__version__` в `hh_companies_by_industry.py`. Импортируется в `main.py` и `web/app.py`, отображается в UI. При релизе также обновить `installer/hh-parser.iss`.
 
 ## Структура проекта
 
 ```
-main.py                        — Точка входа GUI (Flet). UI, состояние, вызов парсинга и экспорта
-hh_companies_by_industry.py    — Ядро парсинга + CLI-точка входа. Модели данных (Industry, Company), HTTP с retry, парсинг HTML, пагинация
-requirements.txt               — Зависимости Python
-README.md                      — Краткая инструкция по запуску
-HH-Parser.spec                 — PyInstaller-спецификация для сборки macOS .app
-.github/workflows/build.yml    — GitHub Actions CI: сборка PyInstaller для Windows/macOS + Inno Setup инсталлятор
-assets/                        — Иконки приложения (icon.png, icon.ico, icon.icns)
-installer/hh-parser.iss        — Скрипт Inno Setup для Windows-инсталлятора
-build/                         — Артефакты сборки PyInstaller
-dist/                          — Выходные файлы PyInstaller (исполняемые файлы, .app, .zip)
-tests/                         — Юнит-тесты (pytest)
-  test_parsing.py              — Тесты парсинга: with_query, extract_max_page, parse_industries, parse_companies_from_industry_page
-.gitignore                     — Игнорирует .venv, __pycache__, .env, scrapped_data/, *.json, .vscode/, .pytest_cache/
+hh_companies_by_industry.py    — Ядро парсинга + CLI. Модели (Industry, Company), HTTP с retry, парсинг, пагинация
+main.py                        — Desktop GUI (Flet). UI, состояние, вызов парсинга и экспорта
+web/
+  app.py                       — FastAPI-бэкенд: API + SSE-стриминг прогресса
+  templates/index.html         — Лендинг с гайдом, фильтрами, логом, таблицей результатов
+  static/style.css             — Стили (тёмная тема, адаптив)
+  requirements.txt             — Зависимости веб-версии
+tests/
+  test_parsing.py              — 18 юнит-тестов на функции парсинга
+requirements.txt               — Зависимости десктоп-версии
+Dockerfile                     — Контейнер для деплоя
+amvera.yaml                    — Конфиг Amvera
+.github/workflows/build.yml    — GitHub Actions: сборка PyInstaller (Windows/macOS) + Inno Setup
+HH-Parser.spec                 — PyInstaller-спецификация для macOS .app
+installer/hh-parser.iss        — Inno Setup скрипт для Windows
+assets/                        — Иконки (icon.png, icon.ico, icon.icns)
+DEVELOPMENT.md                 — Описание этапов разработки и архитектуры
 ```
 
-## Запуск тестов
+## Запуск
 
 ```bash
-.venv/bin/python -m pytest tests/ -v
+# Web
+pip install -r web/requirements.txt
+uvicorn web.app:app --host 127.0.0.1 --port 8000
+
+# Desktop GUI
+pip install -r requirements.txt
+python main.py
+
+# CLI
+python hh_companies_by_industry.py
+
+# Тесты
+pip install pytest
+pytest tests/ -v
+```
+
+## Деплой
+
+Amvera (Docker), два remote:
+```bash
+git push origin main                # GitHub
+git push amvera main:master         # Amvera (ветка master!)
 ```
 
 ## Соглашения по коду
 
-- **Язык**: весь UI-текст, комментарии, докстринги — на **русском языке**. Сохраняй эту конвенцию.
-- **Модели данных**: `@dataclass` для всех структур (`Industry`, `Company`, `AppState`). Сериализация через `dataclasses.asdict()`.
-- **Типизация**: используется везде — `list[T]`, `dict[K, V]`, `Optional[T]`, `Callable`. Синтаксис Python 3.10+ (lowercase generics).
-- **Без классов для логики приложения**: GUI — одна функция `main(page)` с вложенными хелперами и замыканиями, без ООП для UI-слоя.
-- **Многопоточность**: долгий парсинг запускается в daemon-потоке `threading.Thread`, чтобы Flet UI не зависал.
-- **Колбэки прогресса**: `scrape_companies()` принимает `progress_cb: Optional[Callable[[dict], None]]` для отчёта о прогрессе в UI.
-- **Дедупликация**: компании дедуплицируются по URL через `dict[str, Company]`.
-- **Ограничение частоты запросов**: `time.sleep(0.35)` между запросами страниц, чтобы не перегружать hh.ru.
-- **Retry с экспоненциальной задержкой**: `fetch_html()` автоматически повторяет запросы при ошибках и блокировках (403/429), до `MAX_RETRIES` попыток.
-- **Обработка ошибок**: исключения всплывают и ловятся на верхнем уровне в потоке. `HHBlockedError` бросается при блокировке со стороны HH. Колбэки прогресса обёрнуты в try/except.
-- **Экспорт**: вынесен в отдельную функцию `export_results()` в `main.py`.
+- **Язык**: весь UI-текст, комментарии, докстринги — на **русском**
+- **Модели данных**: `@dataclass` для всех структур. Сериализация через `dataclasses.asdict()`
+- **Типизация**: `list[T]`, `dict[K, V]`, `Optional[T]`, `Callable` — Python 3.10+ синтаксис
+- **GUI без ООП**: одна функция `main(page)` с замыканиями
+- **Web**: FastAPI + SSE для стриминга прогресса, кэш индустрий в памяти
+- **Многопоточность**: парсинг в daemon-потоке (GUI) или `asyncio.to_thread` (Web)
+- **Колбэки прогресса**: `scrape_companies()` принимает `progress_cb` для отчёта в UI
+- **Дедупликация**: по URL через `dict[str, Company]`
+- **Rate limiting**: `time.sleep(0.35)` между запросами к hh.ru
+- **Retry**: `fetch_html()` — до 3 попыток с экспоненциальной задержкой, `HHBlockedError` при 403/429
+- **Экспорт**: вынесен в `export_results()` в `main.py`
 
 ## Важные правила
 
-- **Не коммитить JSON-файлы с результатами** — они в gitignore (`*.json`)
-- **Не коммитить `.env` и `.vscode/`** — в gitignore
-- **Сохранять русский язык** во всех пользовательских строках, комментариях и докстрингах
-- **Соблюдать лимиты запросов к hh.ru** — не убирать и не уменьшать `time.sleep()` между запросами
-- **Bundle identifier**: `pro.jobru.hhparser` (задан в HH-Parser.spec)
-- **Две точки входа**: `main.py` (GUI) и `hh_companies_by_industry.py` (CLI) — обе должны работать
-- **Версия Flet зафиксирована** на 0.28.3 — API Flet сильно меняется между версиями, не обновлять без тестирования
-- **Экспорт по умолчанию на Рабочий стол** — приложение автоматически определяет путь к Desktop, включая русскую локаль (`Рабочий стол`) и варианты OneDrive
-- **Тесты**: при изменении парсинга — запускать `pytest tests/ -v` и добавлять новые тесты
+- **Не коммитить** JSON-файлы, `.env`, `.vscode/` — в gitignore
+- **Русский язык** во всех пользовательских строках и комментариях
+- **Не уменьшать `time.sleep()`** между запросами — hh.ru блокирует
+- **Три точки входа**: `main.py` (GUI), `hh_companies_by_industry.py` (CLI), `web/app.py` (Web) — все должны работать
+- **Flet зафиксирован** на 0.28.3 — не обновлять без тестирования
+- **Amvera ожидает ветку `master`** — пушить `git push amvera main:master`
+- **amvera.yaml** (не .yml!) — Amvera не принимает .yml
+- **Тесты**: при изменении парсинга — `pytest tests/ -v` и добавлять новые тесты
+- **Bundle identifier**: `pro.jobru.hhparser`
