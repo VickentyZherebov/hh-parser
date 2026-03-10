@@ -19,6 +19,42 @@
 
 <main class="container">
 
+    <!-- Гайд -->
+    <div class="guide-card card">
+        <div class="card-title">Как это работает</div>
+        <div class="guide-steps">
+            <div class="guide-step">
+                <div class="guide-step-number">1</div>
+                <div class="guide-step-content">
+                    <div class="guide-step-title">Выбери индустрии</div>
+                    <div class="guide-step-desc">Список загрузится автоматически с hh.ru. Отметь одну или несколько отраслей — можно искать по названию или выбрать все сразу.</div>
+                </div>
+            </div>
+            <div class="guide-step">
+                <div class="guide-step-number">2</div>
+                <div class="guide-step-content">
+                    <div class="guide-step-title">Настрой фильтры</div>
+                    <div class="guide-step-desc">Укажи минимум вакансий у компании, регион (113 = Россия) и нужны ли только компании с открытыми вакансиями.</div>
+                </div>
+            </div>
+            <div class="guide-step">
+                <div class="guide-step-number">3</div>
+                <div class="guide-step-content">
+                    <div class="guide-step-title">Запусти парсинг</div>
+                    <div class="guide-step-desc">Нажми «Собрать данные». В логе увидишь прогресс в реальном времени: какая индустрия, страница, сколько компаний найдено.</div>
+                </div>
+            </div>
+            <div class="guide-step">
+                <div class="guide-step-number">4</div>
+                <div class="guide-step-content">
+                    <div class="guide-step-title">Скачай результат</div>
+                    <div class="guide-step-desc">Результат появится в таблице. Нажми «Скачать CSV» — получишь файл с названиями компаний, ссылками и количеством вакансий.</div>
+                </div>
+            </div>
+        </div>
+        <button class="btn-sm guide-toggle" onclick="toggleGuide()">Скрыть</button>
+    </div>
+
     <!-- Статус -->
     <div id="statusBar" class="status-bar">
         <div class="spinner" id="statusSpinner"></div>
@@ -130,6 +166,21 @@
     // ---------- Инициализация ----------
     document.addEventListener('DOMContentLoaded', loadIndustries);
     document.getElementById('searchIndustries').addEventListener('input', renderIndustries);
+
+    // ---------- Гайд ----------
+    function toggleGuide() {
+        const card = document.querySelector('.guide-card');
+        const steps = card.querySelector('.guide-steps');
+        const btn = card.querySelector('.guide-toggle');
+
+        if (steps.style.display === 'none') {
+            steps.style.display = 'grid';
+            btn.textContent = 'Скрыть';
+        } else {
+            steps.style.display = 'none';
+            btn.textContent = 'Как пользоваться?';
+        }
+    }
 
     // ---------- Загрузка индустрий ----------
     async function loadIndustries() {

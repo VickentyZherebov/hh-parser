@@ -480,6 +480,67 @@ td a:hover {
 
 .footer a:hover { text-decoration: underline; }
 
+/* ---------- Гайд ---------- */
+.guide-steps {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+@media (max-width: 640px) {
+    .guide-steps { grid-template-columns: 1fr; }
+}
+
+.guide-step {
+    display: flex;
+    gap: 14px;
+    padding: 16px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    transition: border-color 0.2s;
+}
+
+.guide-step:hover {
+    border-color: var(--accent);
+}
+
+.guide-step-number {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent);
+    color: white;
+    border-radius: 50%;
+    font-weight: 800;
+    font-size: 0.9rem;
+}
+
+.guide-step-content {
+    flex: 1;
+}
+
+.guide-step-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-bottom: 4px;
+    color: var(--text);
+}
+
+.guide-step-desc {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.guide-toggle {
+    margin-top: 4px;
+}
+
 /* ---------- Лог парсинга ---------- */
 .scrape-log-card {
     display: none;
