@@ -2,12 +2,9 @@ meta:
   environment: docker
   toolchain:
     name: docker
-    version: ""
 
 build:
   dockerfile: Dockerfile
-  skip: false
 
 run:
   containerPort: 80
-  healthcheckPath: /
