@@ -2,7 +2,7 @@
 ; Inno Setup script: делает HH-Parser-Setup.exe из dist\HH-Parser.exe
 
 #define MyAppName "HH: Парсер базы компаний"
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "0.2.0"
 #define MyAppPublisher "VickentyZherebov"
 #define MyAppExeName "HH-Parser.exe"
 #define SourceExe "dist\HH-Parser.exe"

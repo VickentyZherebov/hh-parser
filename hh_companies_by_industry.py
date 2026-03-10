@@ -1,6 +1,7 @@
 import json
 import re
 import time
+import logging
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from typing import Callable, Optional
@@ -9,6 +10,9 @@ from urllib.parse import urljoin, urlparse, parse_qs, urlencode, urlunparse
 import requests
 from bs4 import BeautifulSoup
 
+__version__ = "0.2.0"
+
+logger = logging.getLogger(__name__)
 
 BASE = "https://hh.ru"
 CATALOG_URL = f"{BASE}/employers_company"
@@ -18,6 +22,10 @@ UA = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/124.0.0.0 Safari/537.36"
 )
+
+# Retry-настройки
+MAX_RETRIES = 3
+RETRY_BACKOFF = 2.0  # секунды, множитель экспоненциальной задержки
 
 
 @dataclass
@@ -35,10 +43,52 @@ class Company:
     industry_url: str
 
 
+class HHBlockedError(Exception):
+    """HH вернул 403/429 — вероятно, заблокировал или требует капчу."""
+
+
 def fetch_html(url: str, session: requests.Session, timeout: int = 25) -> str:
-    r = session.get(url, timeout=timeout)
-    r.raise_for_status()
-    return r.text
+    """
+    Загружает HTML с retry и экспоненциальной задержкой.
+    Бросает HHBlockedError при 403/429 после исчерпания попыток.
+    """
+    last_exc: Optional[Exception] = None
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            r = session.get(url, timeout=timeout)
+
+            if r.status_code in (403, 429):
+                wait = RETRY_BACKOFF ** attempt
+                logger.warning(
+                    "HH вернул %d для %s (попытка %d/%d), ждём %.1f сек...",
+                    r.status_code, url, attempt, MAX_RETRIES, wait,
+                )
+                if attempt == MAX_RETRIES:
+                    raise HHBlockedError(
+                        f"HH заблокировал запрос (HTTP {r.status_code}). "
+                        f"Попробуйте позже или смените IP."
+                    )
+                time.sleep(wait)
+                continue
+
+            r.raise_for_status()
+            return r.text
+
+        except HHBlockedError:
+            raise
+        except requests.RequestException as exc:
+            last_exc = exc
+            if attempt == MAX_RETRIES:
+                break
+            wait = RETRY_BACKOFF ** attempt
+            logger.warning(
+                "Ошибка запроса %s (попытка %d/%d): %s, ждём %.1f сек...",
+                url, attempt, MAX_RETRIES, exc, wait,
+            )
+            time.sleep(wait)
+
+    raise last_exc or RuntimeError(f"Не удалось загрузить {url}")
 
 
 def soupify(html: str) -> BeautifulSoup:

@@ -1,20 +1,76 @@
 import threading
 import csv
+import json
 from pathlib import Path
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
+from datetime import datetime, timezone
 from typing import List, Optional, Callable
 
 import flet as ft
 import requests
 
 from hh_companies_by_industry import (
+    __version__,
     Industry,
+    Company,
     scrape_companies,
     fetch_html,
     parse_industries,
     CATALOG_URL,
     UA,
 )
+
+
+def export_results(
+    companies: list[Company],
+    chosen_industries: list[Industry],
+    area: int,
+    min_vacancies: int,
+    only_open: bool,
+    output_dir: Path,
+    export_json: bool,
+    export_csv: bool,
+) -> list[str]:
+    """
+    Экспортирует результаты парсинга в JSON и/или CSV.
+    Возвращает список путей к созданным файлам.
+    """
+    ts = datetime.now(timezone.utc)
+    scraped_at_utc = ts.isoformat()
+    ts_compact = ts.strftime("%Y%m%d_%H%M%S")
+
+    base_name = f"hh_companies_multi_area{area}_min{min_vacancies}_{ts_compact}"
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    out_json = output_dir / f"{base_name}.json"
+    out_csv = output_dir / f"{base_name}.csv"
+
+    written_files: list[str] = []
+
+    if export_json:
+        payload = {
+            "scraped_at_utc": scraped_at_utc,
+            "filters": {
+                "min_vacancies": min_vacancies,
+                "area": area,
+                "only_with_open_vacancies": only_open,
+                "industries_selected": [asdict(i) for i in chosen_industries],
+            },
+            "companies_count": len(companies),
+            "companies": [asdict(c) for c in companies],
+        }
+        out_json.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        written_files.append(str(out_json.resolve()))
+
+    if export_csv:
+        with open(out_csv, "w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(["company_name", "vacancies", "company_url", "industry_name", "area", "scraped_at_utc"])
+            for c in companies:
+                w.writerow([c.name, c.vacancies, c.url, c.industry_name, area, scraped_at_utc])
+        written_files.append(str(out_csv.resolve()))
+
+    return written_files
 
 
 @dataclass
@@ -31,7 +87,7 @@ class AppState:
 
 
 def main(page: ft.Page):
-    page.title = "HH: Парсер базы компаний"
+    page.title = f"HH: Парсер базы компаний v{__version__}"
     page.window_width = 1100
     page.window_height = 750
 
@@ -281,48 +337,16 @@ def main(page: ft.Page):
         page.update()
 
         # ---------- export ----------
-        from datetime import datetime, timezone
-        from dataclasses import asdict
-        import json
-
-        ts = datetime.now(timezone.utc)
-        scraped_at_utc = ts.isoformat()
-        ts_compact = ts.strftime("%Y%m%d_%H%M%S")
-
-        base_name = f"hh_companies_multi_area{state.area}_min{state.min_vacancies}_{ts_compact}"
-
-        # папка сохранения: по умолчанию Desktop, но пользователь может выбрать
-        state.output_dir.mkdir(parents=True, exist_ok=True)
-        out_json = state.output_dir / f"{base_name}.json"
-        out_csv = state.output_dir / f"{base_name}.csv"
-
-        payload = {
-            "scraped_at_utc": scraped_at_utc,
-            "filters": {
-                "min_vacancies": state.min_vacancies,
-                "area": state.area,
-                "only_with_open_vacancies": state.only_open,
-                "industries_selected": [asdict(i) for i in chosen],
-            },
-            "companies_count": len(all_companies),
-            "companies": [asdict(c) for c in all_companies],
-        }
-
-        written_files: list[str] = []
-
-        # JSON
-        if export_json_cb.value:
-            out_json.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-            written_files.append(str(out_json.resolve()))
-
-        # CSV (1 строка = 1 компания)
-        if export_csv_cb.value:
-            with open(out_csv, "w", newline="", encoding="utf-8") as f:
-                w = csv.writer(f)
-                w.writerow(["company_name", "vacancies", "company_url", "industry_name", "area", "scraped_at_utc"])
-                for c in all_companies:
-                    w.writerow([c.name, c.vacancies, c.url, c.industry_name, state.area, scraped_at_utc])
-            written_files.append(str(out_csv.resolve()))
+        written_files = export_results(
+            companies=all_companies,
+            chosen_industries=chosen,
+            area=state.area,
+            min_vacancies=state.min_vacancies,
+            only_open=state.only_open,
+            output_dir=state.output_dir,
+            export_json=bool(export_json_cb.value),
+            export_csv=bool(export_csv_cb.value),
+        )
 
         if not written_files:
             result_info.value = "Нечего сохранять: выбери хотя бы один формат (JSON/CSV)."
