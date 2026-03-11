@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Зависимости
 COPY web/requirements.txt requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --root-user-action=ignore -r requirements.txt
 
 # Код
 COPY hh_companies_by_industry.py .
