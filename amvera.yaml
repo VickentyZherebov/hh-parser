@@ -1,13 +1,16 @@
+---
 meta:
   environment: docker
   toolchain:
     name: docker
-
+    version: latest
 build:
   dockerfile: Dockerfile
-
+  skip: false
 run:
+  persistenceMount: /app/data
+  image: null
+  command: null
+  args: null
   containerPort: 80
-  persistentVolumes:
-    - mountPath: /app/data
-      size: 1Gi
+  servicePort: 80
