@@ -8,3 +8,6 @@ build:
 
 run:
   containerPort: 80
+  persistentVolumes:
+    - mountPath: /app/data
+      size: 1Gi

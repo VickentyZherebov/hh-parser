@@ -9,3 +9,4 @@ scrapped_data/
 .pytest_cache/
 build/
 dist/
+data/

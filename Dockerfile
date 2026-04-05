@@ -8,6 +8,8 @@ RUN pip install --no-cache-dir --root-user-action=ignore -r requirements.txt
 
 # Код
 COPY hh_companies_by_industry.py .
+COPY hh_vacancies_by_geo.py .
+COPY manage.py .
 COPY web/ web/
 
 EXPOSE 80

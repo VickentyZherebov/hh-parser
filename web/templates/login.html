@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HH-Parser — Вход</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏢</text></svg>">
+</head>
+<body>
+
+<div class="login-page">
+    <div class="login-card">
+        <h1>HH-Parser</h1>
+        <p class="login-subtitle">Войдите для доступа к инструментам</p>
+
+        <div id="loginError" class="login-error" style="display:none"></div>
+
+        <form id="loginForm" onsubmit="return handleLogin(event)">
+            <div class="form-group">
+                <label for="login">Логин</label>
+                <input type="text" id="login" name="login" required autofocus autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label for="password">Пароль</label>
+                <input type="password" id="password" name="password" required autocomplete="current-password">
+            </div>
+            <button type="submit" class="btn btn-primary btn-full" id="loginBtn">Войти</button>
+        </form>
+    </div>
+</div>
+
+<script>
+async function handleLogin(e) {
+    e.preventDefault();
+    const btn = document.getElementById('loginBtn');
+    const errEl = document.getElementById('loginError');
+    errEl.style.display = 'none';
+    btn.disabled = true;
+    btn.textContent = 'Вход...';
+
+    try {
+        const resp = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                login: document.getElementById('login').value,
+                password: document.getElementById('password').value,
+            }),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            window.location.href = '/';
+        } else {
+            errEl.textContent = data.error || 'Неверный логин или пароль';
+            errEl.style.display = 'block';
+        }
+    } catch (err) {
+        errEl.textContent = 'Ошибка сети';
+        errEl.style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Войти';
+    }
+}
+</script>
+
+</body>
+</html>

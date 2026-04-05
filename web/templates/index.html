@@ -8,8 +8,256 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏢</text></svg>">
+    <style>
+        /* ---------- Строка пользователя ---------- */
+        .user-bar {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 12px;
+            padding: 8px 24px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            min-height: 40px;
+        }
+
+        .user-bar .user-name {
+            color: var(--text);
+            font-weight: 600;
+        }
+
+        .user-bar .btn-logout {
+            padding: 4px 14px;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .user-bar .btn-logout:hover {
+            border-color: var(--red);
+            color: var(--red);
+        }
+
+        /* ---------- Табы ---------- */
+        .tabs-bar {
+            display: flex;
+            gap: 4px;
+            border-bottom: 1px solid var(--border);
+            padding: 0 20px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .tab-btn {
+            padding: 12px 24px;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.2s;
+            margin-bottom: -1px;
+            white-space: nowrap;
+        }
+
+        .tab-btn:hover {
+            color: var(--text);
+        }
+
+        .tab-btn.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* ---------- Пресеты ---------- */
+        .preset-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .preset-bar select {
+            flex: 1;
+            min-width: 200px;
+            padding: 9px 14px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text);
+            font-size: 0.9rem;
+            outline: none;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+
+        .preset-bar select:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        .preset-delete-btn {
+            padding: 4px 8px;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: 0.2s;
+            line-height: 1;
+        }
+
+        .preset-delete-btn:hover {
+            border-color: var(--red);
+            color: var(--red);
+        }
+
+        /* ---------- Гео: города и роли ---------- */
+        .geo-selectors {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 700px) {
+            .geo-selectors { grid-template-columns: 1fr; }
+        }
+
+        .geo-selector-block .block-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+
+        /* ---------- Пивот-таблица ---------- */
+        .geo-pivot-wrap {
+            overflow-x: auto;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+        }
+
+        .geo-pivot {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+        }
+
+        .geo-pivot th {
+            padding: 8px 10px;
+            background: var(--surface-2);
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+            font-weight: 600;
+        }
+
+        .geo-pivot td {
+            padding: 7px 10px;
+            border-bottom: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+            vertical-align: middle;
+        }
+
+        .geo-pivot td:last-child {
+            border-right: none;
+        }
+
+        .geo-pivot tbody tr:hover {
+            background: var(--surface-2);
+        }
+
+        .geo-pivot td.city-cell {
+            font-weight: 600;
+            color: var(--text);
+            white-space: nowrap;
+            background: var(--surface-2);
+        }
+
+        .geo-cell-link {
+            text-decoration: none;
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .geo-cell-green {
+            background: rgba(0, 214, 143, 0.15);
+            color: #00d68f;
+        }
+
+        .geo-cell-yellow {
+            background: rgba(255, 190, 0, 0.15);
+            color: #ffbe00;
+        }
+
+        .geo-cell-red {
+            background: rgba(255, 107, 107, 0.15);
+            color: #ff6b6b;
+        }
+
+        .geo-cell-empty {
+            color: var(--border);
+            font-size: 0.75rem;
+        }
+
+        /* ---------- Карточка результатов гео ---------- */
+        .geo-results-card {
+            display: none;
+        }
+
+        .geo-results-card.visible {
+            display: block;
+        }
+
+        /* ---------- Лог гео (переиспользуем классы) ---------- */
+        .geo-log-card {
+            display: none;
+        }
+
+        .geo-log-card.visible {
+            display: block;
+        }
+
+        /* ---------- Статус/прогресс гео ---------- */
+        #geoStatusBar,
+        #geoProgressBar {
+            margin-bottom: 20px;
+        }
+    </style>
 </head>
 <body>
+
+<!-- Строка пользователя -->
+<div class="user-bar" id="userBar">
+    <span class="user-name" id="userDisplayName">...</span>
+    <button class="btn-logout" onclick="logout()">Выйти</button>
+</div>
 
 <header class="header">
     <h1>HH-Parser</h1>
@@ -17,138 +265,314 @@
     <div class="version-badge">v{{ version }}</div>
 </header>
 
+<!-- Табы -->
+<div class="tabs-bar">
+    <button class="tab-btn active" onclick="switchTab('companies')" id="tabBtnCompanies">Компании по индустриям</button>
+    <button class="tab-btn" onclick="switchTab('geo')" id="tabBtnGeo">Вакансии по гео</button>
+</div>
+
 <main class="container">
 
-    <!-- Гайд -->
-    <div class="guide-card card">
-        <div class="card-title">Как это работает</div>
-        <div class="guide-steps">
-            <div class="guide-step">
-                <div class="guide-step-number">1</div>
-                <div class="guide-step-content">
-                    <div class="guide-step-title">Выбери индустрии</div>
-                    <div class="guide-step-desc">Список загрузится автоматически с hh.ru. Отметь одну или несколько отраслей — можно искать по названию или выбрать все сразу.</div>
+    <!-- ===================== ТАБ: КОМПАНИИ ПО ИНДУСТРИЯМ ===================== -->
+    <div class="tab-content active" id="tabCompanies">
+
+        <!-- Гайд -->
+        <div class="guide-card card">
+            <div class="card-title">Как это работает</div>
+            <div class="guide-steps">
+                <div class="guide-step">
+                    <div class="guide-step-number">1</div>
+                    <div class="guide-step-content">
+                        <div class="guide-step-title">Выбери индустрии</div>
+                        <div class="guide-step-desc">Список загрузится автоматически с hh.ru. Отметь одну или несколько отраслей — можно искать по названию или выбрать все сразу.</div>
+                    </div>
+                </div>
+                <div class="guide-step">
+                    <div class="guide-step-number">2</div>
+                    <div class="guide-step-content">
+                        <div class="guide-step-title">Настрой фильтры</div>
+                        <div class="guide-step-desc">Укажи минимум вакансий у компании, выбери регион и нужны ли только компании с открытыми вакансиями. Настройки можно сохранить как пресет.</div>
+                    </div>
+                </div>
+                <div class="guide-step">
+                    <div class="guide-step-number">3</div>
+                    <div class="guide-step-content">
+                        <div class="guide-step-title">Запусти парсинг</div>
+                        <div class="guide-step-desc">Нажми «Собрать данные». В логе увидишь прогресс в реальном времени: какая индустрия, страница, сколько компаний найдено.</div>
+                    </div>
+                </div>
+                <div class="guide-step">
+                    <div class="guide-step-number">4</div>
+                    <div class="guide-step-content">
+                        <div class="guide-step-title">Скачай результат</div>
+                        <div class="guide-step-desc">Результат появится в таблице. Нажми «Скачать CSV» — получишь файл с названиями компаний, ссылками и количеством вакансий.</div>
+                    </div>
                 </div>
             </div>
-            <div class="guide-step">
-                <div class="guide-step-number">2</div>
-                <div class="guide-step-content">
-                    <div class="guide-step-title">Настрой фильтры</div>
-                    <div class="guide-step-desc">Укажи минимум вакансий у компании, регион (113 = Россия) и нужны ли только компании с открытыми вакансиями.</div>
-                </div>
+            <button class="btn-sm guide-toggle" onclick="toggleGuide()">Скрыть</button>
+        </div>
+
+        <!-- Статус -->
+        <div id="statusBar" class="status-bar">
+            <div class="spinner" id="statusSpinner"></div>
+            <span id="statusText"></span>
+        </div>
+
+        <!-- Прогресс -->
+        <div id="progressBar" class="progress-bar" style="margin-bottom: 20px;">
+            <div class="progress-bar-fill" id="progressFill"></div>
+        </div>
+
+        <!-- Пресеты: компании -->
+        <div class="card">
+            <div class="card-title">Пресеты</div>
+            <div class="preset-bar">
+                <select id="companiesPresetSelect" onchange="loadCompaniesPreset(this.value)">
+                    <option value="">Загрузить пресет...</option>
+                </select>
+                <button class="btn btn-secondary" onclick="saveCompaniesPreset()">Сохранить настройки</button>
             </div>
-            <div class="guide-step">
-                <div class="guide-step-number">3</div>
-                <div class="guide-step-content">
-                    <div class="guide-step-title">Запусти парсинг</div>
-                    <div class="guide-step-desc">Нажми «Собрать данные». В логе увидишь прогресс в реальном времени: какая индустрия, страница, сколько компаний найдено.</div>
+        </div>
+
+        <!-- Фильтры -->
+        <div class="card">
+            <div class="card-title">Фильтры</div>
+            <div class="filters-grid">
+                <div class="form-group">
+                    <label for="minVac">Минимум вакансий</label>
+                    <input type="number" id="minVac" value="10" min="1">
                 </div>
-            </div>
-            <div class="guide-step">
-                <div class="guide-step-number">4</div>
-                <div class="guide-step-content">
-                    <div class="guide-step-title">Скачай результат</div>
-                    <div class="guide-step-desc">Результат появится в таблице. Нажми «Скачать CSV» — получишь файл с названиями компаний, ссылками и количеством вакансий.</div>
+                <div class="form-group">
+                    <label for="areaSelect">Регион</label>
+                    <select id="areaSelect" onchange="document.getElementById('area').value = this.value">
+                        <option value="113" selected>Россия</option>
+                    </select>
+                    <input type="hidden" id="area" value="113">
+                </div>
+                <div class="form-group">
+                    <label>&nbsp;</label>
+                    <div class="toggle-row">
+                        <label class="toggle">
+                            <input type="checkbox" id="onlyOpen" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span>Только с открытыми вакансиями</span>
+                    </div>
                 </div>
             </div>
         </div>
-        <button class="btn-sm guide-toggle" onclick="toggleGuide()">Скрыть</button>
-    </div>
 
-    <!-- Статус -->
-    <div id="statusBar" class="status-bar">
-        <div class="spinner" id="statusSpinner"></div>
-        <span id="statusText"></span>
-    </div>
+        <!-- Индустрии -->
+        <div class="card">
+            <div class="card-title">Индустрии</div>
 
-    <!-- Прогресс -->
-    <div id="progressBar" class="progress-bar" style="margin-bottom: 20px;">
-        <div class="progress-bar-fill" id="progressFill"></div>
-    </div>
+            <div class="industries-toolbar">
+                <input type="text" id="searchIndustries" placeholder="Поиск по индустриям...">
+                <button class="btn-sm" onclick="selectAll()">Выбрать все</button>
+                <button class="btn-sm" onclick="clearAll()">Снять все</button>
+            </div>
 
-    <!-- Фильтры -->
-    <div class="card">
-        <div class="card-title">Фильтры</div>
-        <div class="filters-grid">
+            <div id="industriesList" class="industries-list">
+                <div class="loading-placeholder">
+                    <div class="spinner"></div>
+                    <span>Загрузка индустрий...</span>
+                </div>
+            </div>
+
+            <div class="selected-count">
+                Выбрано: <span id="selectedCount">0</span>
+            </div>
+        </div>
+
+        <!-- Кнопки -->
+        <div class="card">
+            <div class="actions">
+                <button class="btn btn-primary" id="btnStart" onclick="startScrape()" disabled>
+                    <span id="btnStartText">Собрать данные</span>
+                </button>
+                <button class="btn btn-secondary" id="btnCSV" onclick="downloadCSV()" disabled>
+                    Скачать CSV
+                </button>
+            </div>
+        </div>
+
+        <!-- Лог парсинга -->
+        <div class="card scrape-log-card" id="logCard">
+            <div class="card-title">Лог парсинга</div>
+            <div class="scrape-log" id="scrapeLog"></div>
+        </div>
+
+        <!-- Результаты -->
+        <div class="card results-card" id="resultsCard">
+            <div class="results-header">
+                <div class="results-count">Найдено компаний: <span id="resultsCount">0</span></div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Компания</th>
+                            <th>Вакансии</th>
+                            <th>Индустрия</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+    <!-- конец tabCompanies -->
+
+    <!-- ===================== ТАБ: ВАКАНСИИ ПО ГЕО ===================== -->
+    <div class="tab-content" id="tabGeo">
+
+        <!-- Гайд гео -->
+        <div class="guide-card card" id="geoGuideCard">
+            <div class="card-title">Как это работает</div>
+            <div class="guide-steps">
+                <div class="guide-step">
+                    <div class="guide-step-number">1</div>
+                    <div class="guide-step-content">
+                        <div class="guide-step-title">Выбери города и роли</div>
+                        <div class="guide-step-desc">Нажми «Топ-35» для быстрого набора городов и «Базовые 10» для популярных профессий. Или выбери вручную через поиск. Можно добавить текстовый поиск (напр. «Тракторист»).</div>
+                    </div>
+                </div>
+                <div class="guide-step">
+                    <div class="guide-step-number">2</div>
+                    <div class="guide-step-content">
+                        <div class="guide-step-title">Запусти парсинг</div>
+                        <div class="guide-step-desc">Нажми «Собрать данные». Парсер обойдёт HH.ru по каждой комбинации город + роль. Прогресс виден в логе. Занимает 3-10 минут в зависимости от количества.</div>
+                    </div>
+                </div>
+                <div class="guide-step">
+                    <div class="guide-step-number">3</div>
+                    <div class="guide-step-content">
+                        <div class="guide-step-title">Читай таблицу</div>
+                        <div class="guide-step-desc">В каждой ячейке: <b>уник / всего</b>. «Уник» — сколько разных работодателей, «всего» — сколько объявлений. Цвета: <span style="color:#00d68f">зелёный</span> (≥20 уник), <span style="color:#ffbe00">жёлтый</span> (5-19), <span style="color:#ff6b6b">красный</span> (&lt;5). Клик по ячейке — откроет поиск на HH.ru.</div>
+                    </div>
+                </div>
+                <div class="guide-step">
+                    <div class="guide-step-number">4</div>
+                    <div class="guide-step-content">
+                        <div class="guide-step-title">Скачай Excel</div>
+                        <div class="guide-step-desc">Нажми «Скачать Excel». Файл содержит 2 листа: «По ролям» и «По названиям». На каждом — сырые данные со ссылками + сводная таблица город × роль. Сохрани настройки как пресет, чтобы не выбирать заново.</div>
+                    </div>
+                </div>
+            </div>
+            <button class="btn-sm guide-toggle" onclick="toggleGeoGuide()">Скрыть</button>
+        </div>
+
+        <!-- Статус гео -->
+        <div id="geoStatusBar" class="status-bar">
+            <div class="spinner" id="geoStatusSpinner"></div>
+            <span id="geoStatusText"></span>
+        </div>
+
+        <!-- Прогресс гео -->
+        <div id="geoProgressBar" class="progress-bar">
+            <div class="progress-bar-fill" id="geoProgressFill"></div>
+        </div>
+
+        <!-- Пресеты: гео -->
+        <div class="card">
+            <div class="card-title">Пресеты</div>
+            <div class="preset-bar">
+                <select id="geoPresetSelect" onchange="loadGeoPreset(this.value)">
+                    <option value="">Загрузить пресет...</option>
+                </select>
+                <button class="btn btn-secondary" onclick="saveGeoPreset()">Сохранить настройки</button>
+            </div>
+        </div>
+
+        <!-- Города и роли -->
+        <div class="card">
+            <div class="card-title">Параметры поиска</div>
+            <div class="geo-selectors">
+
+                <!-- Блок: Города -->
+                <div class="geo-selector-block">
+                    <div class="block-label">Города</div>
+                    <div class="industries-toolbar">
+                        <input type="text" id="searchCities" placeholder="Поиск городов...">
+                        <button class="btn-sm" onclick="selectTop35()">Топ-35</button>
+                        <button class="btn-sm" onclick="selectAllCities()">Все</button>
+                        <button class="btn-sm" onclick="clearCities()">Снять все</button>
+                    </div>
+                    <div id="citiesList" class="industries-list">
+                        <div class="loading-placeholder">
+                            <span>Загрузится при открытии таба</span>
+                        </div>
+                    </div>
+                    <div class="selected-count">
+                        Выбрано городов: <span id="citiesSelectedCount">0</span>
+                    </div>
+                </div>
+
+                <!-- Блок: Роли -->
+                <div class="geo-selector-block">
+                    <div class="block-label">Роли (профобласти HH)</div>
+                    <div class="industries-toolbar">
+                        <input type="text" id="searchRoles" placeholder="Поиск ролей...">
+                        <button class="btn-sm" onclick="selectBase10Roles()">Базовые 10</button>
+                        <button class="btn-sm" onclick="selectAllRoles()">Все</button>
+                        <button class="btn-sm" onclick="clearRoles()">Снять все</button>
+                    </div>
+                    <div id="rolesList" class="industries-list">
+                        <div class="loading-placeholder">
+                            <span>Загрузится при открытии таба</span>
+                        </div>
+                    </div>
+                    <div class="selected-count">
+                        Выбрано ролей: <span id="rolesSelectedCount">0</span>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Текстовый поиск -->
+        <div class="card">
+            <div class="card-title">Текстовый поиск по вакансиям (опционально)</div>
             <div class="form-group">
-                <label for="minVac">Минимум вакансий</label>
-                <input type="number" id="minVac" value="10" min="1">
-            </div>
-            <div class="form-group">
-                <label for="area">Регион (area ID)</label>
-                <input type="number" id="area" value="113" min="1">
-            </div>
-            <div class="form-group">
-                <label>&nbsp;</label>
-                <div class="toggle-row">
-                    <label class="toggle">
-                        <input type="checkbox" id="onlyOpen" checked>
-                        <span class="toggle-slider"></span>
-                    </label>
-                    <span>Только с открытыми вакансиями</span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Индустрии -->
-    <div class="card">
-        <div class="card-title">Индустрии</div>
-
-        <div class="industries-toolbar">
-            <input type="text" id="searchIndustries" placeholder="Поиск по индустриям...">
-            <button class="btn-sm" onclick="selectAll()">Выбрать все</button>
-            <button class="btn-sm" onclick="clearAll()">Снять все</button>
-        </div>
-
-        <div id="industriesList" class="industries-list">
-            <div class="loading-placeholder">
-                <div class="spinner"></div>
-                <span>Загрузка индустрий...</span>
+                <label for="geoSearchTexts">Поисковые запросы через запятую</label>
+                <input type="text" id="geoSearchTexts" placeholder="Тракторист, Монтер пути">
             </div>
         </div>
 
-        <div class="selected-count">
-            Выбрано: <span id="selectedCount">0</span>
+        <!-- Кнопки гео -->
+        <div class="card">
+            <div class="actions">
+                <button class="btn btn-primary" id="geoBtnStart" onclick="startGeoScrape()">
+                    <span id="geoBtnStartText">Собрать данные</span>
+                </button>
+                <button class="btn btn-secondary" id="geoBtnXlsx" onclick="downloadGeoXlsx()" disabled>
+                    Скачать Excel
+                </button>
+            </div>
         </div>
-    </div>
 
-    <!-- Кнопки -->
-    <div class="card">
-        <div class="actions">
-            <button class="btn btn-primary" id="btnStart" onclick="startScrape()" disabled>
-                <span id="btnStartText">Собрать данные</span>
-            </button>
-            <button class="btn btn-secondary" id="btnCSV" onclick="downloadCSV()" disabled>
-                Скачать CSV
-            </button>
+        <!-- Лог гео -->
+        <div class="card scrape-log-card geo-log-card" id="geoLogCard">
+            <div class="card-title">Лог парсинга</div>
+            <div class="scrape-log" id="geoScrapeLog"></div>
         </div>
-    </div>
 
-    <!-- Лог парсинга -->
-    <div class="card scrape-log-card" id="logCard">
-        <div class="card-title">Лог парсинга</div>
-        <div class="scrape-log" id="scrapeLog"></div>
-    </div>
+        <!-- Результаты гео -->
+        <div class="card geo-results-card" id="geoResultsCard">
+            <div class="results-header">
+                <div class="results-count">Результаты по гео</div>
+            </div>
+            <div class="geo-pivot-wrap">
+                <table class="geo-pivot">
+                    <thead id="geoPivotHead"></thead>
+                    <tbody id="geoPivotBody"></tbody>
+                </table>
+            </div>
+        </div>
 
-    <!-- Результаты -->
-    <div class="card results-card" id="resultsCard">
-        <div class="results-header">
-            <div class="results-count">Найдено компаний: <span id="resultsCount">0</span></div>
-        </div>
-        <div class="table-wrap">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Компания</th>
-                        <th>Вакансии</th>
-                        <th>Индустрия</th>
-                    </tr>
-                </thead>
-                <tbody id="resultsBody"></tbody>
-            </table>
-        </div>
     </div>
+    <!-- конец tabGeo -->
 
 </main>
 
@@ -157,22 +581,119 @@
 </footer>
 
 <script>
-    // ---------- Состояние ----------
+    // ================================================================
+    // ОБЩЕЕ
+    // ================================================================
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = String(text);
+        return div.innerHTML;
+    }
+
+    // ---------- Пользователь ----------
+    async function loadCurrentUser() {
+        try {
+            const res = await fetch('/api/auth/me');
+            if (!res.ok) return;
+            const data = await res.json();
+            const name = data.display_name || data.login || 'Пользователь';
+            document.getElementById('userDisplayName').textContent = name;
+        } catch (e) {
+            document.getElementById('userDisplayName').textContent = '';
+        }
+    }
+
+    async function logout() {
+        try {
+            await fetch('/api/auth/logout', { method: 'POST' });
+        } catch (e) {
+            // игнорируем ошибки при выходе
+        }
+        window.location.href = '/login';
+    }
+
+    // ---------- Табы ----------
+    let geoDataLoaded = false;
+
+    function switchTab(tab) {
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+        document.getElementById('tab' + capitalize(tab)).classList.add('active');
+        document.getElementById('tabBtn' + capitalize(tab)).classList.add('active');
+
+        if (tab === 'geo' && !geoDataLoaded) {
+            geoDataLoaded = true;
+            loadGeoData();
+            loadGeoPresets();
+        }
+
+        if (tab === 'companies') {
+            loadCompaniesPresets();
+        }
+    }
+
+    function capitalize(str) {
+        return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+
+    // ================================================================
+    // ТАБ: КОМПАНИИ ПО ИНДУСТРИЯМ (весь оригинальный код)
+    // ================================================================
+
     let industries = [];
     let selectedSlugs = new Set();
     let lastResult = null;
     let isRunning = false;
 
-    // ---------- Инициализация ----------
-    document.addEventListener('DOMContentLoaded', loadIndustries);
-    document.getElementById('searchIndustries').addEventListener('input', renderIndustries);
+    document.addEventListener('DOMContentLoaded', () => {
+        loadCurrentUser();
+        loadIndustries();
+        loadCompaniesPresets();
+        loadAreaOptions();
+        document.getElementById('searchIndustries').addEventListener('input', renderIndustries);
+    });
+
+    // ---------- Регионы для фильтра компаний ----------
+    async function loadAreaOptions() {
+        try {
+            const res = await fetch('https://api.hh.ru/areas');
+            const data = await res.json();
+            const select = document.getElementById('areaSelect');
+            // Добавляем страны и их регионы
+            data.forEach(country => {
+                if (country.areas && country.areas.length > 0) {
+                    // Страна как option
+                    const countryOpt = document.createElement('option');
+                    countryOpt.value = country.id;
+                    countryOpt.textContent = country.name;
+                    if (String(country.id) === '113') countryOpt.selected = true;
+                    select.appendChild(countryOpt);
+                    // Регионы внутри страны
+                    country.areas.forEach(region => {
+                        const opt = document.createElement('option');
+                        opt.value = region.id;
+                        opt.textContent = '\u00A0\u00A0\u00A0' + region.name;
+                        select.appendChild(opt);
+                    });
+                }
+            });
+        } catch (e) {
+            // Если не загрузились — оставляем дефолт Россия=113
+        }
+    }
 
     // ---------- Гайд ----------
     function toggleGuide() {
-        const card = document.querySelector('.guide-card');
+        _toggleGuideCard(document.getElementById('tabCompanies').querySelector('.guide-card'));
+    }
+    function toggleGeoGuide() {
+        _toggleGuideCard(document.getElementById('geoGuideCard'));
+    }
+    function _toggleGuideCard(card) {
+        if (!card) return;
         const steps = card.querySelector('.guide-steps');
         const btn = card.querySelector('.guide-toggle');
-
         if (steps.style.display === 'none') {
             steps.style.display = 'grid';
             btn.textContent = 'Скрыть';
@@ -258,7 +779,7 @@
         document.getElementById('btnStart').disabled = selectedSlugs.size === 0 || isRunning;
     }
 
-    // ---------- Статус ----------
+    // ---------- Статус (компании) ----------
     function showStatus(text, type = '') {
         const bar = document.getElementById('statusBar');
         const spinner = document.getElementById('statusSpinner');
@@ -282,7 +803,7 @@
         document.getElementById('progressFill').style.width = pct + '%';
     }
 
-    // ---------- Лог ----------
+    // ---------- Лог (компании) ----------
     function showLog(visible) {
         document.getElementById('logCard').className = visible ? 'card scrape-log-card visible' : 'card scrape-log-card';
     }
@@ -303,7 +824,7 @@
         log.scrollTop = log.scrollHeight;
     }
 
-    // ---------- Парсинг (SSE) ----------
+    // ---------- Парсинг (SSE, компании) ----------
     async function startScrape() {
         if (isRunning || selectedSlugs.size === 0) return;
 
@@ -357,7 +878,6 @@
                         if (event.type === 'progress') {
                             showStatus(event.status);
 
-                            // Прогресс: комбинируем индустрию и страницу
                             const indPct = ((event.industry_idx - 1) / event.industries_total) * 100;
                             let pagePct = 0;
                             if (event.pages_total > 0) {
@@ -365,7 +885,6 @@
                             }
                             setProgress(Math.min(indPct + pagePct, 99));
 
-                            // Логируем только смену страниц (не дублируем начало индустрии)
                             if (event.page > 0) {
                                 addLog(event.status);
                             } else {
@@ -402,7 +921,7 @@
         }
     }
 
-    // ---------- Результаты ----------
+    // ---------- Результаты (компании) ----------
     function renderResults(data) {
         const card = document.getElementById('resultsCard');
         card.className = 'card results-card visible';
@@ -423,12 +942,6 @@
             `;
             tbody.appendChild(tr);
         });
-    }
-
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
     }
 
     // ---------- Скачать CSV ----------
@@ -464,6 +977,617 @@
             showStatus('Ошибка: ' + e.message, 'error');
         } finally {
             document.getElementById('btnCSV').disabled = false;
+        }
+    }
+
+    // ---------- Пресеты: компании ----------
+    let _companiesPresetsCache = [];
+
+    async function loadCompaniesPresets() {
+        try {
+            const res = await fetch('/api/presets?tab=companies');
+            if (!res.ok) return;
+            const data = await res.json();
+            _companiesPresetsCache = data.presets || [];
+            const select = document.getElementById('companiesPresetSelect');
+            while (select.options.length > 1) select.remove(1);
+            _companiesPresetsCache.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = p.name;
+                select.appendChild(opt);
+            });
+        } catch (e) {
+            // пресеты недоступны — не критично
+        }
+    }
+
+    function loadCompaniesPreset(presetId) {
+        if (!presetId) return;
+        const preset = _companiesPresetsCache.find(p => String(p.id) === String(presetId));
+        if (!preset || !preset.config) return;
+        const s = preset.config;
+        if (s.industry_slugs) {
+            selectedSlugs = new Set(s.industry_slugs);
+            renderIndustries();
+        }
+        if (s.min_vacancies !== undefined) document.getElementById('minVac').value = s.min_vacancies;
+        if (s.area !== undefined) document.getElementById('area').value = s.area;
+        if (s.only_open !== undefined) document.getElementById('onlyOpen').checked = s.only_open;
+        showStatus('Пресет загружен: ' + preset.name, 'success');
+        document.getElementById('companiesPresetSelect').value = '';
+    }
+
+    async function saveCompaniesPreset() {
+        const name = prompt('Название пресета:');
+        if (!name || !name.trim()) return;
+        const body = {
+            name: name.trim(),
+            tab: 'companies',
+            config: {
+                industry_slugs: Array.from(selectedSlugs),
+                min_vacancies: parseInt(document.getElementById('minVac').value) || 10,
+                area: parseInt(document.getElementById('area').value) || 113,
+                only_open: document.getElementById('onlyOpen').checked,
+            }
+        };
+        try {
+            const res = await fetch('/api/presets', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body),
+            });
+            if (res.ok) {
+                showStatus('Пресет сохранён!', 'success');
+                loadCompaniesPresets();
+            } else {
+                showStatus('Не удалось сохранить пресет', 'error');
+            }
+        } catch (e) {
+            showStatus('Ошибка: ' + e.message, 'error');
+        }
+    }
+
+    // ================================================================
+    // ТАБ: ВАКАНСИИ ПО ГЕО
+    // ================================================================
+
+    const TOP_35_CITIES = [
+        'Архангельск', 'Белгород', 'Брянск', 'Владивосток', 'Воронеж',
+        'Елец', 'Кемерово', 'Комсомольск-на-Амуре', 'Курск', 'Липецк',
+        'Махачкала', 'Междуреченск', 'Назрань', 'Находка', 'Новокузнецк',
+        'Омск', 'Оренбург', 'Орск', 'Петропавловск-Камчатский', 'Прокопьевск',
+        'Севастополь', 'Северодвинск', 'Симферополь', 'Старый Оскол', 'Томск',
+        'Улан-Удэ', 'Уссурийск', 'Хабаровск', 'Черкесск', 'Чита',
+        'Южно-Сахалинск', 'Якутск', 'Горно-Алтайск', 'Абакан', 'Сургут'
+    ];
+
+    const BASE_10_ROLE_IDS = [9, 21, 31, 35, 97, 102, 109, 115, 131, 143];
+
+    let allCities = [];
+    let allRoles = [];
+    let selectedCityNames = new Set();
+    let selectedRoleIds = new Set();
+    let geoLastBody = null;
+    let geoIsRunning = false;
+
+    // ---------- Загрузка городов и ролей ----------
+    async function loadGeoData() {
+        await Promise.all([loadCities(), loadRoles()]);
+    }
+
+    async function loadCities() {
+        const list = document.getElementById('citiesList');
+        list.innerHTML = '<div class="loading-placeholder"><div class="spinner"></div><span>Загрузка городов...</span></div>';
+        try {
+            const res = await fetch('/api/geo/cities');
+            const data = await res.json();
+            allCities = data.cities || [];
+            renderCities();
+        } catch (e) {
+            list.innerHTML = '<div class="loading-placeholder"><span style="color:var(--red)">Не удалось загрузить города</span></div>';
+        }
+    }
+
+    async function loadRoles() {
+        const list = document.getElementById('rolesList');
+        list.innerHTML = '<div class="loading-placeholder"><div class="spinner"></div><span>Загрузка ролей...</span></div>';
+        try {
+            const res = await fetch('/api/geo/roles');
+            const data = await res.json();
+            allRoles = data.roles || [];
+            renderRoles();
+        } catch (e) {
+            list.innerHTML = '<div class="loading-placeholder"><span style="color:var(--red)">Не удалось загрузить роли</span></div>';
+        }
+    }
+
+    // ---------- Отрисовка городов ----------
+    function renderCities() {
+        const filter = document.getElementById('searchCities').value.toLowerCase().trim();
+        const list = document.getElementById('citiesList');
+        list.innerHTML = '';
+
+        // Сначала показываем выбранные, потом отфильтрованные (макс 100)
+        let filtered;
+        if (filter) {
+            filtered = allCities.filter(c => c.name.toLowerCase().includes(filter));
+        } else {
+            // Без фильтра: показываем только выбранные + Топ-35
+            const show = new Set([...selectedCityNames, ...TOP_35_CITIES]);
+            filtered = allCities.filter(c => show.has(c.name));
+            if (filtered.length === 0) {
+                list.innerHTML = '<div class="loading-placeholder"><span>Введите название города для поиска или нажмите «Топ-35»</span></div>';
+                updateCitiesCount();
+                return;
+            }
+        }
+
+        if (filtered.length === 0) {
+            list.innerHTML = '<div class="loading-placeholder"><span>Ничего не найдено</span></div>';
+            updateCitiesCount();
+            return;
+        }
+
+        // Ограничиваем до 200 для производительности
+        const toRender = filtered.slice(0, 200);
+
+        toRender.forEach(city => {
+            const label = document.createElement('label');
+            label.className = 'industry-item';
+
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = selectedCityNames.has(city.name);
+            cb.addEventListener('change', () => {
+                if (cb.checked) {
+                    selectedCityNames.add(city.name);
+                } else {
+                    selectedCityNames.delete(city.name);
+                }
+                updateCitiesCount();
+            });
+
+            const span = document.createElement('span');
+            span.textContent = city.name;
+
+            label.appendChild(cb);
+            label.appendChild(span);
+            list.appendChild(label);
+        });
+
+        updateCitiesCount();
+    }
+
+    function updateCitiesCount() {
+        document.getElementById('citiesSelectedCount').textContent = selectedCityNames.size;
+    }
+
+    function selectTop35() {
+        TOP_35_CITIES.forEach(name => selectedCityNames.add(name));
+        renderCities();
+    }
+
+    function selectAllCities() {
+        allCities.forEach(c => selectedCityNames.add(c.name));
+        renderCities();
+    }
+
+    function clearCities() {
+        selectedCityNames.clear();
+        renderCities();
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('searchCities').addEventListener('input', renderCities);
+        document.getElementById('searchRoles').addEventListener('input', renderRoles);
+    });
+
+    // ---------- Отрисовка ролей ----------
+    function renderRoles() {
+        const filter = document.getElementById('searchRoles').value.toLowerCase().trim();
+        const list = document.getElementById('rolesList');
+        list.innerHTML = '';
+
+        let filtered;
+        if (filter) {
+            filtered = allRoles.filter(r => r.name.toLowerCase().includes(filter));
+        } else {
+            // Без фильтра: показываем только выбранные + базовые 10
+            const show = new Set([...selectedRoleIds, ...BASE_10_ROLE_IDS]);
+            filtered = allRoles.filter(r => show.has(r.id));
+            if (filtered.length === 0) {
+                list.innerHTML = '<div class="loading-placeholder"><span>Введите название роли или нажмите «Базовые 10»</span></div>';
+                updateRolesCount();
+                return;
+            }
+        }
+
+        if (filtered.length === 0) {
+            list.innerHTML = '<div class="loading-placeholder"><span>Ничего не найдено</span></div>';
+            updateRolesCount();
+            return;
+        }
+
+        filtered.slice(0, 200).forEach(role => {
+            const label = document.createElement('label');
+            label.className = 'industry-item';
+
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = selectedRoleIds.has(role.id);
+            cb.addEventListener('change', () => {
+                if (cb.checked) {
+                    selectedRoleIds.add(role.id);
+                } else {
+                    selectedRoleIds.delete(role.id);
+                }
+                updateRolesCount();
+            });
+
+            const span = document.createElement('span');
+            span.textContent = role.name + (role.id ? ` (${role.id})` : '');
+
+            label.appendChild(cb);
+            label.appendChild(span);
+            list.appendChild(label);
+        });
+
+        updateRolesCount();
+    }
+
+    function updateRolesCount() {
+        document.getElementById('rolesSelectedCount').textContent = selectedRoleIds.size;
+    }
+
+    function selectBase10Roles() {
+        BASE_10_ROLE_IDS.forEach(id => selectedRoleIds.add(id));
+        renderRoles();
+    }
+
+    function selectAllRoles() {
+        allRoles.forEach(r => selectedRoleIds.add(r.id));
+        renderRoles();
+    }
+
+    function clearRoles() {
+        selectedRoleIds.clear();
+        renderRoles();
+    }
+
+    // ---------- Статус (гео) ----------
+    function showGeoStatus(text, type = '') {
+        const bar = document.getElementById('geoStatusBar');
+        const spinner = document.getElementById('geoStatusSpinner');
+        const textEl = document.getElementById('geoStatusText');
+
+        bar.className = 'status-bar visible' + (type ? ' ' + type : '');
+        textEl.textContent = text;
+        spinner.style.display = type === '' ? 'block' : 'none';
+    }
+
+    function showGeoProgress(visible) {
+        const bar = document.getElementById('geoProgressBar');
+        bar.className = visible ? 'progress-bar visible' : 'progress-bar';
+    }
+
+    function setGeoProgress(pct) {
+        document.getElementById('geoProgressFill').style.width = pct + '%';
+    }
+
+    // ---------- Лог (гео) ----------
+    function showGeoLog(visible) {
+        document.getElementById('geoLogCard').className =
+            visible ? 'card scrape-log-card geo-log-card visible' : 'card scrape-log-card geo-log-card';
+    }
+
+    function clearGeoLog() {
+        document.getElementById('geoScrapeLog').innerHTML = '';
+    }
+
+    function addGeoLog(text, type = '') {
+        const log = document.getElementById('geoScrapeLog');
+        const line = document.createElement('div');
+        line.className = 'log-line' + (type ? ' log-' + type : '');
+
+        const time = new Date().toLocaleTimeString('ru-RU');
+        line.innerHTML = `<span class="log-time">${time}</span> ${escapeHtml(text)}`;
+
+        log.appendChild(line);
+        log.scrollTop = log.scrollHeight;
+    }
+
+    // ---------- Сборка тела запроса гео ----------
+    function buildGeoBody() {
+        const rawTexts = document.getElementById('geoSearchTexts').value.trim();
+        const searchTexts = rawTexts
+            ? rawTexts.split(',').map(s => s.trim()).filter(Boolean)
+            : [];
+        return {
+            city_names: Array.from(selectedCityNames),
+            role_ids: Array.from(selectedRoleIds),
+            search_texts: searchTexts,
+        };
+    }
+
+    // ---------- Парсинг гео (SSE) ----------
+    async function startGeoScrape() {
+        if (geoIsRunning) return;
+
+        const body = buildGeoBody();
+        if (body.city_names.length === 0) {
+            showGeoStatus('Выберите хотя бы один город', 'error');
+            return;
+        }
+        if (body.role_ids.length === 0 && body.search_texts.length === 0) {
+            showGeoStatus('Выберите роли или введите поисковые запросы', 'error');
+            return;
+        }
+
+        geoIsRunning = true;
+        geoLastBody = body;
+        document.getElementById('geoBtnStart').disabled = true;
+        document.getElementById('geoBtnXlsx').disabled = true;
+        document.getElementById('geoResultsCard').className = 'card geo-results-card';
+
+        clearGeoLog();
+        showGeoLog(true);
+        showGeoStatus('Запускаем парсинг...');
+        showGeoProgress(true);
+        setGeoProgress(0);
+        addGeoLog('Парсинг запущен...', 'info');
+
+        try {
+            const res = await fetch('/api/geo/scrape/stream', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body),
+            });
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const {done, value} = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, {stream: true});
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+
+                for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue;
+                    const jsonStr = line.slice(6);
+                    if (!jsonStr) continue;
+
+                    try {
+                        const event = JSON.parse(jsonStr);
+
+                        if (event.type === 'progress') {
+                            const msg = event.status_text || event.status || '...';
+                            showGeoStatus(msg);
+                            if (event.done !== undefined && event.total > 0) {
+                                setGeoProgress(Math.min((event.done / event.total) * 100, 99));
+                            }
+                            addGeoLog(msg);
+                        }
+
+                        if (event.type === 'result') {
+                            setGeoProgress(100);
+                            showGeoStatus('Готово!', 'success');
+                            addGeoLog('Парсинг завершён', 'success');
+                            renderGeoPivot(event, body);
+                            document.getElementById('geoBtnXlsx').disabled = false;
+                        }
+
+                        if (event.type === 'error') {
+                            showGeoStatus(event.error, 'error');
+                            addGeoLog('Ошибка: ' + event.error, 'error');
+                        }
+                    } catch (parseErr) {
+                        // пропускаем некорректные строки
+                    }
+                }
+            }
+
+        } catch (e) {
+            showGeoStatus('Ошибка: ' + e.message, 'error');
+            addGeoLog('Ошибка соединения: ' + e.message, 'error');
+        } finally {
+            geoIsRunning = false;
+            document.getElementById('geoBtnStart').disabled = false;
+            setTimeout(() => showGeoProgress(false), 1500);
+        }
+    }
+
+    // ---------- Пивот-таблица ----------
+    function renderGeoPivot(event, body) {
+        const card = document.getElementById('geoResultsCard');
+        card.className = 'card geo-results-card visible';
+
+        // Собираем все колонки (роли + текстовые запросы)
+        const columns = [];
+
+        // Из roles
+        const roles = event.roles || [];
+        const roleNames = {};
+        roles.forEach(row => {
+            if (row.role_id !== undefined && !roleNames[row.role_id]) {
+                roleNames[row.role_id] = row.role_name || String(row.role_id);
+            }
+        });
+        Object.keys(roleNames).forEach(rid => {
+            columns.push({ key: 'role_' + rid, label: roleNames[rid] });
+        });
+
+        // Из texts (текстовые запросы)
+        const texts = event.texts || [];
+        const textQueries = [];
+        texts.forEach(row => {
+            if (row.text && !textQueries.includes(row.text)) {
+                textQueries.push(row.text);
+            }
+        });
+        textQueries.forEach(q => {
+            columns.push({ key: 'text_' + q, label: q });
+        });
+
+        // Строки = города
+        const citySet = new Set();
+        texts.forEach(r => citySet.add(r.city));
+        roles.forEach(r => citySet.add(r.city));
+        const cities = Array.from(citySet).sort();
+
+        // Индексируем данные
+        const dataMap = {};
+        roles.forEach(row => {
+            const k = row.city + '|role_' + row.role_id;
+            dataMap[k] = row;
+        });
+        texts.forEach(row => {
+            const k = row.city + '|text_' + row.text;
+            dataMap[k] = row;
+        });
+
+        // Рендерим заголовок
+        const thead = document.getElementById('geoPivotHead');
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<th>Город</th>' + columns.map(c => `<th>${escapeHtml(c.label)}</th>`).join('');
+        thead.innerHTML = '';
+        thead.appendChild(tr);
+
+        // Рендерим тело
+        const tbody = document.getElementById('geoPivotBody');
+        tbody.innerHTML = '';
+
+        cities.forEach(city => {
+            const row = document.createElement('tr');
+            let html = `<td class="city-cell">${escapeHtml(city)}</td>`;
+
+            columns.forEach(col => {
+                const entry = dataMap[city + '|' + col.key];
+                if (!entry) {
+                    html += `<td class="geo-cell-empty">—</td>`;
+                    return;
+                }
+
+                const unique = entry.unique || 0;
+                const total = entry.total || 0;
+                const url = entry.url || '#';
+
+                let colorClass = 'geo-cell-red';
+                if (unique >= 20) colorClass = 'geo-cell-green';
+                else if (unique >= 5) colorClass = 'geo-cell-yellow';
+
+                html += `<td><a href="${escapeHtml(url)}" target="_blank" class="geo-cell-link ${colorClass}">${unique} / ${total}</a></td>`;
+            });
+
+            row.innerHTML = html;
+            tbody.appendChild(row);
+        });
+    }
+
+    // ---------- Скачать Excel (гео) ----------
+    async function downloadGeoXlsx() {
+        if (!geoLastBody) return;
+
+        document.getElementById('geoBtnXlsx').disabled = true;
+        showGeoStatus('Формируем Excel...');
+
+        try {
+            const res = await fetch('/api/geo/scrape/xlsx', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(geoLastBody),
+            });
+
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                showGeoStatus(data.error || 'Ошибка скачивания', 'error');
+                return;
+            }
+
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'hh_geo_vacancies.xlsx';
+            a.click();
+            URL.revokeObjectURL(url);
+
+            showGeoStatus('Excel скачан!', 'success');
+        } catch (e) {
+            showGeoStatus('Ошибка: ' + e.message, 'error');
+        } finally {
+            document.getElementById('geoBtnXlsx').disabled = false;
+        }
+    }
+
+    // ---------- Пресеты: гео ----------
+    let _geoPresetsCache = [];
+
+    async function loadGeoPresets() {
+        try {
+            const res = await fetch('/api/presets?tab=geo');
+            if (!res.ok) return;
+            const data = await res.json();
+            _geoPresetsCache = data.presets || [];
+            const select = document.getElementById('geoPresetSelect');
+            while (select.options.length > 1) select.remove(1);
+            _geoPresetsCache.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = p.name;
+                select.appendChild(opt);
+            });
+        } catch (e) {
+            // пресеты недоступны — не критично
+        }
+    }
+
+    function loadGeoPreset(presetId) {
+        if (!presetId) return;
+        const preset = _geoPresetsCache.find(p => String(p.id) === String(presetId));
+        if (!preset || !preset.config) return;
+        const s = preset.config;
+        if (s.city_names) {
+            selectedCityNames = new Set(s.city_names);
+            renderCities();
+        }
+        if (s.role_ids) {
+            selectedRoleIds = new Set(s.role_ids);
+            renderRoles();
+        }
+        if (s.search_texts !== undefined) {
+            document.getElementById('geoSearchTexts').value = (s.search_texts || []).join(', ');
+        }
+        showGeoStatus('Пресет загружен: ' + preset.name, 'success');
+        document.getElementById('geoPresetSelect').value = '';
+    }
+
+    async function saveGeoPreset() {
+        const name = prompt('Название пресета:');
+        if (!name || !name.trim()) return;
+        const body = {
+            name: name.trim(),
+            tab: 'geo',
+            config: buildGeoBody(),
+        };
+        try {
+            const res = await fetch('/api/presets', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body),
+            });
+            if (res.ok) {
+                showGeoStatus('Пресет сохранён!', 'success');
+                loadGeoPresets();
+            } else {
+                showGeoStatus('Не удалось сохранить пресет', 'error');
+            }
+        } catch (e) {
+            showGeoStatus('Ошибка: ' + e.message, 'error');
         }
     }
 </script>

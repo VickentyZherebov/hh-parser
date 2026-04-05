@@ -604,3 +604,264 @@ td a:hover {
     padding: 40px;
     color: var(--text-muted);
 }
+
+/* ---------- Страница логина ---------- */
+.login-page {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 20px;
+}
+
+.login-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 48px 40px;
+    width: 100%;
+    max-width: 420px;
+    text-align: center;
+}
+
+.login-card h1 {
+    font-size: 2rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, #6c5ce7, #a29bfe, #74b9ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 8px;
+}
+
+.login-subtitle {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    margin-bottom: 32px;
+}
+
+.login-card .form-group {
+    text-align: left;
+    margin-bottom: 20px;
+}
+
+.login-error {
+    background: rgba(255, 107, 107, 0.1);
+    border: 1px solid var(--red);
+    color: var(--red);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    margin-bottom: 20px;
+    font-size: 0.9rem;
+}
+
+.btn-full {
+    width: 100%;
+    justify-content: center;
+    margin-top: 8px;
+}
+
+/* ---------- Строка пользователя (задаётся в HTML, но страховка) ---------- */
+.user-bar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 8px 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    min-height: 40px;
+}
+
+/* ---------- Полоса табов ---------- */
+.tabs-bar {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+    padding: 0 20px;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.tab-btn {
+    padding: 12px 24px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s;
+    margin-bottom: -1px;
+    white-space: nowrap;
+    font-family: inherit;
+}
+
+.tab-btn:hover {
+    color: var(--text);
+}
+
+.tab-btn.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+/* ---------- Пресеты ---------- */
+.preset-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.preset-bar select {
+    flex: 1;
+    min-width: 200px;
+    padding: 9px 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 0.9rem;
+    outline: none;
+    cursor: pointer;
+    transition: border-color 0.2s;
+    font-family: inherit;
+}
+
+.preset-bar select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+/* ---------- Гео: сетка блоков ---------- */
+.geo-selectors {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+@media (max-width: 700px) {
+    .geo-selectors { grid-template-columns: 1fr; }
+}
+
+.geo-selector-block .block-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+}
+
+/* ---------- Пивот-таблица гео ---------- */
+.geo-pivot-wrap {
+    overflow-x: auto;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+}
+
+.geo-pivot {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+}
+
+.geo-pivot th {
+    padding: 8px 10px;
+    background: var(--surface-2);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+    font-weight: 600;
+    text-align: left;
+}
+
+.geo-pivot td {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    vertical-align: middle;
+}
+
+.geo-pivot td:last-child {
+    border-right: none;
+}
+
+.geo-pivot tbody tr:hover {
+    background: var(--surface-2);
+}
+
+.geo-pivot td.city-cell {
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    background: var(--surface-2);
+}
+
+.geo-cell-link {
+    text-decoration: none;
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: opacity 0.15s;
+}
+
+.geo-cell-link:hover {
+    opacity: 0.8;
+    text-decoration: none;
+}
+
+.geo-cell-green {
+    background: rgba(0, 214, 143, 0.15);
+    color: #00d68f;
+}
+
+.geo-cell-yellow {
+    background: rgba(255, 190, 0, 0.15);
+    color: #ffbe00;
+}
+
+.geo-cell-red {
+    background: rgba(255, 107, 107, 0.15);
+    color: #ff6b6b;
+}
+
+.geo-cell-empty {
+    color: var(--border);
+    font-size: 0.75rem;
+}
+
+/* ---------- Карточки гео (видимость) ---------- */
+.geo-results-card {
+    display: none;
+}
+
+.geo-results-card.visible {
+    display: block;
+}
+
+.geo-log-card {
+    display: none;
+}
+
+.geo-log-card.visible {
+    display: block;
+}
