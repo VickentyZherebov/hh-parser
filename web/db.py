@@ -51,6 +51,25 @@ def init_db():
     """)
     conn.commit()
     conn.close()
+    _seed_users()
+
+
+def _seed_users():
+    """Создать начальных пользователей если БД пустая."""
+    from web.auth import hash_password
+    users = get_user_by_login("admin")
+    if users:
+        return  # юзеры уже есть
+
+    seed = [
+        ("admin", "HHparser2026!", "Викентий", "admin"),
+        ("masha", "HHparser2026!", "Маша Истомина", "user"),
+        ("efim", "HHparser2026!", "Ефим Заковряшин", "user"),
+        ("dima", "HHparser2026!", "Дмитрий Дмитриев", "user"),
+    ]
+    for login, pw, name, role in seed:
+        if not get_user_by_login(login):
+            create_user(login, hash_password(pw), name, role)
 
 
 # ---------- Users ----------
