@@ -192,6 +192,8 @@ def fetch_vacancies(
     area_id: int,
     text: Optional[str] = None,
     professional_role: Optional[int] = None,
+    filter_text: Optional[str] = None,
+    filter_exact: bool = False,
 ) -> tuple[int, int]:
     """
     Запрашивает вакансии через HH.ru API и возвращает (total_count, unique_employer_count).
@@ -200,10 +202,17 @@ def fetch_vacancies(
     unique_employer_count — кол-во уникальных работодателей (distinct employer_id
                            по всем страницам пагинации, максимум 2000 результатов)
 
+    Если filter_text задан — вакансии фильтруются на нашей стороне,
+    потому что HH API возвращает нерелевантные результаты даже с кавычками.
+    - filter_exact=False (частичное): название должно СОДЕРЖАТЬ фразу
+    - filter_exact=True  (точное):   название должно ТОЧНО СОВПАДАТЬ с фразой
+
     Параметры:
         area_id           — ID региона/города HH.ru
         text              — текстовый поиск по названию вакансии
         professional_role — фильтр по профессиональной роли (ID из справочника)
+        filter_text       — пост-фильтр по названию вакансии
+        filter_exact      — True = точное совпадение, False = вхождение фразы
     """
     params: dict = {
         "area": area_id,
@@ -218,6 +227,9 @@ def fetch_vacancies(
 
     employer_ids: set[str] = set()
     total = 0
+    filtered_total = 0
+    need_filter = filter_text is not None
+    filter_lower = filter_text.lower() if need_filter else ""
 
     for page in range(MAX_PAGES):
         params["page"] = page
@@ -239,6 +251,15 @@ def fetch_vacancies(
             break
 
         for item in items:
+            if need_filter:
+                name = (item.get("name") or "").lower()
+                if filter_exact:
+                    if name != filter_lower:
+                        continue
+                else:
+                    if filter_lower not in name:
+                        continue
+                filtered_total += 1
             employer = item.get("employer") or {}
             emp_id = employer.get("id")
             if emp_id:
@@ -250,7 +271,8 @@ def fetch_vacancies(
 
         time.sleep(REQUEST_DELAY)
 
-    return total, len(employer_ids)
+    final_total = filtered_total if need_filter else total
+    return final_total, len(employer_ids)
 
 
 # ── Основная функция парсинга ─────────────────────────────────────────────────
@@ -378,7 +400,11 @@ def scrape_vacancies_geo(
             _notify(city, search_text, f"[{done}/{total_queries}] {city} — {query_label}...")
 
             try:
-                total, unique = fetch_vacancies(area_id, text=api_text)
+                total, unique = fetch_vacancies(
+                    area_id, text=api_text,
+                    filter_text=search_text,
+                    filter_exact=exact,
+                )
                 url = make_search_url(area_id, text=api_text)
                 logger.debug("%s / %s: всего=%d, уник=%d", city, search_text, total, unique)
             except Exception as exc:
