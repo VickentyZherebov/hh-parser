@@ -534,10 +534,8 @@
         <!-- Текстовый поиск -->
         <div class="card">
             <div class="card-title">Текстовый поиск по вакансиям (опционально)</div>
-            <div class="form-group">
-                <label for="geoSearchTexts">Поисковые запросы через запятую</label>
-                <input type="text" id="geoSearchTexts" placeholder="Тракторист, Монтер пути">
-            </div>
+            <div id="geoSearchRows"></div>
+            <button class="btn-sm" onclick="addSearchRow()" style="margin-top:10px">+ Добавить запрос</button>
         </div>
 
         <!-- Кнопки гео -->
@@ -1297,16 +1295,58 @@
         log.scrollTop = log.scrollHeight;
     }
 
+    // ---------- Текстовые запросы (динамические строки) ----------
+    let _searchRowId = 0;
+
+    function addSearchRow(text = '', exact = false) {
+        const container = document.getElementById('geoSearchRows');
+        const id = _searchRowId++;
+        const row = document.createElement('div');
+        row.className = 'search-row';
+        row.id = 'searchRow_' + id;
+        row.style.cssText = 'display:flex;align-items:center;gap:10px;margin-bottom:8px';
+        row.innerHTML = `
+            <input type="text" class="search-row-text" value="${escapeHtml(text)}" placeholder="Название вакансии..." style="flex:1;padding:10px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.95rem;outline:none">
+            <label style="display:flex;align-items:center;gap:6px;font-size:0.85rem;color:var(--text-muted);white-space:nowrap;cursor:pointer">
+                <input type="checkbox" class="search-row-partial" ${exact ? '' : 'checked'} style="accent-color:var(--accent)">
+                частичное
+            </label>
+            <button class="btn-sm" onclick="this.parentElement.remove()" style="padding:6px 10px;color:var(--red)">✕</button>
+        `;
+        container.appendChild(row);
+    }
+
+    function getSearchRows() {
+        const rows = document.querySelectorAll('#geoSearchRows .search-row');
+        const result = [];
+        rows.forEach(row => {
+            const text = row.querySelector('.search-row-text').value.trim();
+            if (!text) return;
+            const partial = row.querySelector('.search-row-partial').checked;
+            result.push({text, exact: !partial});
+        });
+        return result;
+    }
+
+    function setSearchRows(items) {
+        document.getElementById('geoSearchRows').innerHTML = '';
+        _searchRowId = 0;
+        if (!items || items.length === 0) return;
+        items.forEach(item => {
+            if (typeof item === 'string') {
+                addSearchRow(item, false);
+            } else {
+                addSearchRow(item.text || '', item.exact || false);
+            }
+        });
+    }
+
     // ---------- Сборка тела запроса гео ----------
     function buildGeoBody() {
-        const rawTexts = document.getElementById('geoSearchTexts').value.trim();
-        const searchTexts = rawTexts
-            ? rawTexts.split(',').map(s => s.trim()).filter(Boolean)
-            : [];
         return {
             city_names: Array.from(selectedCityNames),
             role_ids: Array.from(selectedRoleIds),
-            search_texts: searchTexts,
+            search_texts: getSearchRows(),
         };
     }
 
@@ -1560,7 +1600,7 @@
             renderRoles();
         }
         if (s.search_texts !== undefined) {
-            document.getElementById('geoSearchTexts').value = (s.search_texts || []).join(', ');
+            setSearchRows(s.search_texts || []);
         }
         showGeoStatus('Пресет загружен: ' + preset.name, 'success');
         document.getElementById('geoPresetSelect').value = '';

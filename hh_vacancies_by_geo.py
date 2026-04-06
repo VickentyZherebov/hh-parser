@@ -112,13 +112,16 @@ def load_professional_roles() -> list[dict]:
     data = resp.json()
 
     roles: list[dict] = []
+    seen_ids: set[int] = set()
 
     # Структура: {"categories": [{"id": ..., "name": ..., "roles": [{...}]}]}
+    # Роль может встречаться в нескольких категориях — дедуплицируем по ID
     for category in data.get("categories", []):
         for role in category.get("roles", []):
             role_id = role.get("id")
             role_name = role.get("name", "").strip()
-            if role_id and role_name:
+            if role_id and role_name and role_id not in seen_ids:
+                seen_ids.add(role_id)
                 roles.append({"id": int(role_id), "name": role_name})
 
     roles.sort(key=lambda r: r["name"].lower())
@@ -356,23 +359,36 @@ def scrape_vacancies_geo(
             time.sleep(REQUEST_DELAY)
 
     # ── Проход 2: по текстовым запросам ───────────────────────────────────────
+    # search_texts может содержать строки или dict {"text": str, "exact": bool}
+    def _normalize_search(item):
+        if isinstance(item, str):
+            return item, False
+        return item.get("text", ""), item.get("exact", False)
+
     for city, area_id in city_ids.items():
-        for search_text in search_texts:
+        for search_item in search_texts:
+            search_text, exact = _normalize_search(search_item)
+            if not search_text:
+                continue
             done += 1
-            query_label = f'"{search_text}"'
+            # Для точного поиска оборачиваем в кавычки (HH API поддерживает)
+            api_text = f'"{search_text}"' if exact else search_text
+            mode_label = "точное" if exact else "частичное"
+            query_label = f'"{search_text}" ({mode_label})'
             _notify(city, search_text, f"[{done}/{total_queries}] {city} — {query_label}...")
 
             try:
-                total, unique = fetch_vacancies(area_id, text=search_text)
-                url = make_search_url(area_id, text=search_text)
+                total, unique = fetch_vacancies(area_id, text=api_text)
+                url = make_search_url(area_id, text=api_text)
                 logger.debug("%s / %s: всего=%d, уник=%d", city, search_text, total, unique)
             except Exception as exc:
                 logger.error("Ошибка %s / %s: %s", city, search_text, exc)
-                total, unique, url = -1, -1, make_search_url(area_id, text=search_text)
+                total, unique, url = -1, -1, make_search_url(area_id, text=api_text)
 
             texts_results.append({
                 "city": city,
                 "text": search_text,
+                "exact": exact,
                 "total": total,
                 "unique": unique,
                 "url": url,

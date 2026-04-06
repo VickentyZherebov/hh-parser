@@ -152,7 +152,7 @@ class CreatePresetRequest(BaseModel):
 class GeoScrapeRequest(BaseModel):
     city_names: list[str] = []         # названия городов
     role_ids: list[int] = []           # ID профессиональных ролей HH.ru
-    search_texts: list[str] = []       # текстовые запросы (поиск по названию вакансии)
+    search_texts: list = []            # строки или {"text": str, "exact": bool}
 
 
 # ---------- Страницы ----------
