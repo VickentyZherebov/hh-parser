@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import random
 import re
 import time
@@ -44,7 +45,7 @@ USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 )
 
-DEFAULT_POOL_SIZE = 10
+DEFAULT_POOL_SIZE = int(os.environ.get("HH_POOL_SIZE", "10"))
 DEFAULT_MAX_TASKS_PER_CONTEXT = 30
 DEFAULT_MAX_MINUTES_PER_CONTEXT = 5.0
 DEFAULT_PROXY_COOLDOWN_S = 60.0
@@ -87,13 +88,30 @@ class ProxyManager:
         self.cooldown_s = cooldown_s
         self._lock = asyncio.Lock()
         if not self.proxies:
-            raise RuntimeError(f"Нет прокси в {path}")
+            raise RuntimeError(
+                f"Нет прокси: проверь {path} или env-переменную HH_PROXIES"
+            )
         logger.info("ProxyManager: загружено %d прокси", len(self.proxies))
 
     @staticmethod
     def _load(path: Path) -> list[Proxy]:
+        """
+        Источник прокси (по приоритету):
+        1. Env-переменная HH_PROXIES — список строк через перевод строки
+           или через `;`. Удобно на Amvera (без волюма).
+        2. Файл path (по умолчанию data/proxies.txt) — для локальной разработки.
+        """
+        env = os.environ.get("HH_PROXIES", "").strip()
+        if env:
+            # Поддерживаем оба разделителя: \n и ; (на случай однострочного env)
+            raw_lines = re.split(r"[\n;]+", env)
+        elif path.exists():
+            raw_lines = path.read_text().splitlines()
+        else:
+            return []
+
         out: list[Proxy] = []
-        for line in path.read_text().splitlines():
+        for line in raw_lines:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
