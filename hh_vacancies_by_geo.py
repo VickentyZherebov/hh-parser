@@ -31,6 +31,8 @@ from urllib.parse import urlencode
 
 import requests
 
+from hh_browser_fetcher import CellResult, CellTask, scrape_via_browser
+
 try:
     import openpyxl
     from openpyxl.styles import Alignment, Font, PatternFill
@@ -280,57 +282,29 @@ def fetch_vacancies(
 def scrape_vacancies_geo(
     city_ids: dict[str, int],
     role_ids: list[int],
-    search_texts: list[str],
+    search_texts: list,
     progress_cb: Optional[Callable[[dict], None]] = None,
+    pool_size: int = 10,
 ) -> dict:
     """
-    Главная функция: обходит все комбинации город × запрос и собирает статистику.
+    Главная функция: обходит все комбинации город × запрос через пул
+    Playwright-контекстов с ротацией прокси (каждый воркер — sticky прокси,
+    ротация контекста каждые 30 задач или 5 минут).
 
-    Два прохода:
-    - "По ролям": каждый город × каждый ID профессиональной роли
-    - "По названиям": каждый город × каждая текстовая строка поиска
+    Сигнатура и формат возврата сохранены — UI/Excel работают как раньше.
+    Изменился только бэкенд: вместо api.hh.ru/vacancies (закрыт HH) теперь
+    парсим публичный hh.ru/search/vacancy через настоящий браузер.
 
     Аргументы:
         city_ids     — dict: city_name -> area_id (результат resolve_city_ids)
         role_ids     — список ID профессиональных ролей HH.ru
-        search_texts — список текстовых запросов (поиск по названию вакансии)
+        search_texts — список текстовых запросов: строки или dict
+                       {"text": str, "exact": bool}
         progress_cb  — опциональный коллбэк прогресса, вызывается с dict:
                        {done, total, city, query, status_text}
-
-    Возвращает dict:
-    {
-        "scraped_at": str,           # ISO datetime
-        "cities": [str, ...],        # порядок городов
-        "roles": [                   # результаты по ролям
-            {
-                "city": str,
-                "role_id": int,
-                "role_name": str,
-                "total": int,
-                "unique": int,
-                "url": str,
-            },
-            ...
-        ],
-        "texts": [                   # результаты по текстовым запросам
-            {
-                "city": str,
-                "text": str,
-                "total": int,
-                "unique": int,
-                "url": str,
-            },
-            ...
-        ],
-    }
+        pool_size    — сколько параллельных контекстов держим (по умолчанию 10)
     """
-    total_queries = len(city_ids) * (len(role_ids) + len(search_texts))
-    done = 0
-
-    roles_results: list[dict] = []
-    texts_results: list[dict] = []
-
-    # Загружаем имена ролей из справочника (для отображения)
+    # ── Имена ролей для отображения ───────────────────────────────────────────
     role_names_map: dict[int, str] = {}
     if role_ids:
         try:
@@ -339,36 +313,105 @@ def scrape_vacancies_geo(
         except Exception as exc:
             logger.warning("Не удалось загрузить справочник ролей: %s", exc)
 
-    def _notify(city: str, query: str, status_text: str) -> None:
+    # ── Нормализация search_texts ─────────────────────────────────────────────
+    def _normalize_search(item) -> tuple[str, bool]:
+        if isinstance(item, str):
+            return item, False
+        return item.get("text", ""), item.get("exact", False)
+
+    norm_texts: list[tuple[str, bool]] = [
+        ns for ns in (_normalize_search(it) for it in search_texts) if ns[0]
+    ]
+
+    # ── Сборка списка задач ───────────────────────────────────────────────────
+    # Порядок: сначала роли, потом тексты. Внутри — по порядку городов.
+    # Сохраняем индексы, чтобы потом разложить результаты обратно.
+    tasks: list[CellTask] = []
+    role_task_idx: dict[tuple[str, int], int] = {}
+    text_task_idx: dict[tuple[str, str, bool], int] = {}
+
+    for city, area_id in city_ids.items():
+        for role_id in role_ids:
+            tasks.append(CellTask(
+                city=city,
+                area_id=area_id,
+                professional_role=role_id,
+                role_name=role_names_map.get(role_id, f"Роль #{role_id}"),
+            ))
+            role_task_idx[(city, role_id)] = len(tasks) - 1
+
+    for city, area_id in city_ids.items():
+        for search_text, exact in norm_texts:
+            api_text = f'"{search_text}"' if exact else search_text
+            tasks.append(CellTask(
+                city=city,
+                area_id=area_id,
+                text=api_text,
+                filter_text=search_text,
+                filter_exact=exact,
+            ))
+            text_task_idx[(city, search_text, exact)] = len(tasks) - 1
+
+    # ── Адаптер progress_cb из формата BrowserPool в формат UI ────────────────
+    def _adapter(event: dict) -> None:
         if progress_cb is None:
+            return
+        et = event.get("type")
+        if et == "cell_done":
+            status = (
+                f"[{event['done']}/{event['total']}] "
+                f"{event['city']} — {event['query']}: "
+                f"всего={event['total_vacancies']}, "
+                f"уник={event['unique_employers']}"
+            )
+        elif et == "cell_error":
+            status = (
+                f"[{event['done']}/{event['total']}] "
+                f"{event['city']} — {event['query']}: "
+                f"ошибка ({event.get('error', '?')})"
+            )
+        elif et == "context_open":
+            # Не шлём в UI — это шум
+            return
+        else:
             return
         try:
             progress_cb({
-                "done": done,
-                "total": total_queries,
-                "city": city,
-                "query": query,
-                "status_text": status_text,
+                "done": event["done"],
+                "total": event["total"],
+                "city": event["city"],
+                "query": event["query"],
+                "status_text": status,
             })
         except Exception:
-            pass  # коллбэк не должен ронять парсер
+            pass
 
-    # ── Проход 1: по профессиональным ролям ───────────────────────────────────
+    # ── Запуск пула ───────────────────────────────────────────────────────────
+    results = scrape_via_browser(tasks, pool_size=pool_size, progress_cb=_adapter)
+
+    # Привязываем результат к индексу задачи через identity (CellResult.task is task)
+    result_by_idx: dict[int, CellResult] = {}
+    for r in results:
+        for idx, t in enumerate(tasks):
+            if r.task is t:
+                result_by_idx[idx] = r
+                break
+
+    # ── Раскладываем результаты обратно в roles[] и texts[] ───────────────────
+    roles_results: list[dict] = []
+    texts_results: list[dict] = []
+
     for city, area_id in city_ids.items():
         for role_id in role_ids:
-            done += 1
+            idx = role_task_idx[(city, role_id)]
+            r = result_by_idx.get(idx)
             role_name = role_names_map.get(role_id, f"Роль #{role_id}")
-            query_label = f"роль: {role_name}"
-            _notify(city, query_label, f"[{done}/{total_queries}] {city} — {query_label}...")
-
-            try:
-                total, unique = fetch_vacancies(area_id, professional_role=role_id)
-                url = make_search_url(area_id, professional_role=role_id)
-                logger.debug("%s / %s: всего=%d, уник=%d", city, role_name, total, unique)
-            except Exception as exc:
-                logger.error("Ошибка %s / %s: %s", city, role_name, exc)
-                total, unique, url = -1, -1, make_search_url(area_id, professional_role=role_id)
-
+            url = make_search_url(area_id, professional_role=role_id)
+            if r and not r.error:
+                total = r.total_vacancies
+                unique = r.unique_employers
+            else:
+                total, unique = -1, -1
             roles_results.append({
                 "city": city,
                 "role_id": role_id,
@@ -377,40 +420,20 @@ def scrape_vacancies_geo(
                 "unique": unique,
                 "url": url,
             })
-            _notify(city, query_label, f"[{done}/{total_queries}] {city} — {query_label}: всего={total}, уник={unique}")
-            time.sleep(REQUEST_DELAY)
-
-    # ── Проход 2: по текстовым запросам ───────────────────────────────────────
-    # search_texts может содержать строки или dict {"text": str, "exact": bool}
-    def _normalize_search(item):
-        if isinstance(item, str):
-            return item, False
-        return item.get("text", ""), item.get("exact", False)
 
     for city, area_id in city_ids.items():
-        for search_item in search_texts:
-            search_text, exact = _normalize_search(search_item)
-            if not search_text:
-                continue
-            done += 1
-            # Для точного поиска оборачиваем в кавычки (HH API поддерживает)
+        for search_text, exact in norm_texts:
+            idx = text_task_idx[(city, search_text, exact)]
+            r = result_by_idx.get(idx)
             api_text = f'"{search_text}"' if exact else search_text
-            mode_label = "точное" if exact else "частичное"
-            query_label = f'"{search_text}" ({mode_label})'
-            _notify(city, search_text, f"[{done}/{total_queries}] {city} — {query_label}...")
-
-            try:
-                total, unique = fetch_vacancies(
-                    area_id, text=api_text,
-                    filter_text=search_text,
-                    filter_exact=exact,
-                )
-                url = make_search_url(area_id, text=api_text)
-                logger.debug("%s / %s: всего=%d, уник=%d", city, search_text, total, unique)
-            except Exception as exc:
-                logger.error("Ошибка %s / %s: %s", city, search_text, exc)
-                total, unique, url = -1, -1, make_search_url(area_id, text=api_text)
-
+            url = make_search_url(area_id, text=api_text)
+            if r and not r.error:
+                # Для текстовых запросов используем matched_vacancies
+                # (после пост-фильтра по filter_text/filter_exact)
+                total = r.matched_vacancies
+                unique = r.unique_employers
+            else:
+                total, unique = -1, -1
             texts_results.append({
                 "city": city,
                 "text": search_text,
@@ -419,8 +442,6 @@ def scrape_vacancies_geo(
                 "unique": unique,
                 "url": url,
             })
-            _notify(city, search_text, f"[{done}/{total_queries}] {city} — {query_label}: всего={total}, уник={unique}")
-            time.sleep(REQUEST_DELAY)
 
     return {
         "scraped_at": datetime.now().isoformat(timespec="seconds"),
