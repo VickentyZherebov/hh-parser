@@ -1,16 +1,14 @@
-FROM python:3.12-slim
+# Официальный образ Playwright: Chromium + системные зависимости уже внутри
+# (/ms-playwright), версия тега = версии pip-пакета playwright (1.59.0). Так не
+# качаем Chromium с Google CDN при сборке (режется с РФ); mcr.microsoft.com
+# доступен. Образ ~2 ГБ — тянется один раз, кэшируется на ome.
+FROM mcr.microsoft.com/playwright/python:v1.59.0-noble
 
 WORKDIR /app
 
-# Python-зависимости (включая playwright-пакет; сам Chromium НЕ ставим — см. ниже)
+# Python-зависимости (playwright==1.59.0 уже в образе под bundled-браузеры)
 COPY web/requirements.txt requirements.txt
 RUN pip install --no-cache-dir --root-user-action=ignore -r requirements.txt
-
-# Chromium на ome НЕ устанавливаем намеренно: прямое скачивание с Google CDN
-# режется с РФ-сети, а официальный образ Playwright (~2 ГБ) на текущем WiFi-линке
-# ome (~1.6 Мбит/с) тянется часами. Вкладки «Индекс ХХ»/«Зарплаты» (stats.hh.ru)
-# браузер не используют. Вкладки «Гео»/«Компании» пока живут на Amvera; Chromium
-# на ome добавим отдельным слоем (через прокси), когда линк будет здоров.
 
 # Код
 COPY hh_companies_by_industry.py .
