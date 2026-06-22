@@ -599,6 +599,16 @@
         <div id="indexProgressBar" class="progress-bar"><div class="progress-bar-fill" id="indexProgressFill"></div></div>
 
         <div class="card">
+            <div class="card-title">Пресеты</div>
+            <div class="preset-bar">
+                <select id="indexPresetSelect" onchange="MARKET.index.loadPreset(this.value)">
+                    <option value="">Загрузить пресет...</option>
+                </select>
+                <button class="btn btn-secondary" onclick="MARKET.index.savePreset()">Сохранить настройки</button>
+            </div>
+        </div>
+
+        <div class="card">
             <div class="card-title">Параметры</div>
             <div class="geo-selectors">
                 <div class="geo-selector-block">
@@ -668,6 +678,16 @@
             <span id="salaryStatusText"></span>
         </div>
         <div id="salaryProgressBar" class="progress-bar"><div class="progress-bar-fill" id="salaryProgressFill"></div></div>
+
+        <div class="card">
+            <div class="card-title">Пресеты</div>
+            <div class="preset-bar">
+                <select id="salaryPresetSelect" onchange="MARKET.salary.loadPreset(this.value)">
+                    <option value="">Загрузить пресет...</option>
+                </select>
+                <button class="btn btn-secondary" onclick="MARKET.salary.savePreset()">Сохранить настройки</button>
+            </div>
+        </div>
 
         <div class="card">
             <div class="card-title">Параметры</div>
@@ -1924,9 +1944,56 @@
                 state.profAreas = profAreas || [];
                 renderCities();
                 renderProf();
+                loadPresets();
             } catch (e) {
                 showStatus('Не удалось загрузить справочники: ' + e.message, 'error');
             }
+        }
+
+        // ----- Пресеты (tab = kind: 'index'|'salary') -----
+        let presetsCache = [];
+        async function loadPresets() {
+            try {
+                const res = await fetch('/api/presets?tab=' + kind);
+                if (!res.ok) return;
+                const data = await res.json();
+                presetsCache = data.presets || [];
+                const sel = $('PresetSelect');
+                while (sel.options.length > 1) sel.remove(1);
+                presetsCache.forEach(p => {
+                    const o = document.createElement('option');
+                    o.value = p.id; o.textContent = p.name;
+                    sel.appendChild(o);
+                });
+            } catch (e) { /* пресеты недоступны — не критично */ }
+        }
+        function loadPreset(id) {
+            if (!id) return;
+            const p = presetsCache.find(x => String(x.id) === String(id));
+            if (!p || !p.config) return;
+            if (p.config.city_names) { state.selectedCities = new Set(p.config.city_names); renderCities(); }
+            if (p.config.prof_area_ids) { state.selectedProf = new Set(p.config.prof_area_ids); renderProf(); }
+            showStatus('Пресет загружен: ' + p.name, 'success');
+            $('PresetSelect').value = '';
+        }
+        async function savePreset() {
+            const name = prompt('Название пресета:');
+            if (!name || !name.trim()) return;
+            const body = {
+                name: name.trim(), tab: kind,
+                config: {
+                    city_names: Array.from(state.selectedCities),
+                    prof_area_ids: Array.from(state.selectedProf),
+                },
+            };
+            try {
+                const res = await fetch('/api/presets', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body),
+                });
+                if (res.ok) { showStatus('Пресет сохранён!', 'success'); loadPresets(); }
+                else showStatus('Не удалось сохранить пресет', 'error');
+            } catch (e) { showStatus('Ошибка: ' + e.message, 'error'); }
         }
 
         // ----- Пивот -----
@@ -2064,7 +2131,7 @@
         }
 
         return {
-            load, start, download,
+            load, start, download, loadPreset, savePreset,
             selectDefaultCities() { MARKET_DEFAULT_CITIES.forEach(n => state.selectedCities.add(n)); renderCities(); },
             clearCities() { state.selectedCities.clear(); renderCities(); },
             selectAllProf() { state.profAreas.forEach(p => state.selectedProf.add(p.id)); renderProf(); },
