@@ -2,14 +2,15 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Python-зависимости
+# Python-зависимости (включая playwright-пакет; сам Chromium НЕ ставим — см. ниже)
 COPY web/requirements.txt requirements.txt
 RUN pip install --no-cache-dir --root-user-action=ignore -r requirements.txt
 
-# Системные зависимости Chromium + сам Chromium для Playwright
-# install-deps подтягивает libnss, libdrm, libxkbcommon и пр. (~150 МБ)
-# install chromium — сам бинарник (~170 МБ). Итого образ растёт примерно на 320 МБ.
-RUN playwright install-deps chromium && playwright install chromium
+# Chromium на ome НЕ устанавливаем намеренно: прямое скачивание с Google CDN
+# режется с РФ-сети, а официальный образ Playwright (~2 ГБ) на текущем WiFi-линке
+# ome (~1.6 Мбит/с) тянется часами. Вкладки «Индекс ХХ»/«Зарплаты» (stats.hh.ru)
+# браузер не используют. Вкладки «Гео»/«Компании» пока живут на Amvera; Chromium
+# на ome добавим отдельным слоем (через прокси), когда линк будет здоров.
 
 # Код
 COPY hh_companies_by_industry.py .
