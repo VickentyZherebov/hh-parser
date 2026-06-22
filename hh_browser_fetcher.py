@@ -364,7 +364,13 @@ class BrowserPool:
 
     async def __aenter__(self) -> "BrowserPool":
         self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(headless=True)
+        # --disable-dev-shm-usage: в Docker /dev/shm мал (64 МБ) → Page crashed /
+        # TimeoutError на больших прогонах. --no-sandbox/--disable-gpu — для headless
+        # в контейнере без GPU (ome).
+        self._browser = await self._playwright.chromium.launch(
+            headless=True,
+            args=["--disable-dev-shm-usage", "--no-sandbox", "--disable-gpu"],
+        )
         return self
 
     async def __aexit__(self, *args) -> None:

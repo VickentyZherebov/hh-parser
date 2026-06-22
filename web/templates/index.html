@@ -269,6 +269,8 @@
 <div class="tabs-bar">
     <button class="tab-btn active" onclick="switchTab('companies')" id="tabBtnCompanies">Компании по индустриям</button>
     <button class="tab-btn" onclick="switchTab('geo')" id="tabBtnGeo">Вакансии по гео</button>
+    <button class="tab-btn" onclick="switchTab('index')" id="tabBtnIndex">Индекс ХХ</button>
+    <button class="tab-btn" onclick="switchTab('salary')" id="tabBtnSalary">Зарплаты</button>
 </div>
 
 <main class="container">
@@ -577,6 +579,148 @@
     </div>
     <!-- конец tabGeo -->
 
+    <!-- ===================== ТАБ: ИНДЕКС ХХ ===================== -->
+    <div class="tab-content" id="tabIndex">
+
+        <div class="card">
+            <div class="card-title">hh.индекс — напряжённость рынка кандидатов</div>
+            <p style="font-size:0.88rem;color:var(--text-muted);margin:0;line-height:1.55">
+                hh.индекс = соотношение резюме к вакансиям по профобласти в регионе. Чем выше — тем больше
+                кандидатов на одну вакансию (рынок соискателя). Источник — открытая статистика
+                <b>stats.hh.ru</b>, без аккаунта и браузера. Берётся последнее доступное значение
+                (данные с лагом ~1 месяц). Выбери города и профобласти → «Собрать данные» → «Скачать Excel».
+            </p>
+        </div>
+
+        <div id="indexStatusBar" class="status-bar">
+            <div class="spinner" id="indexStatusSpinner"></div>
+            <span id="indexStatusText"></span>
+        </div>
+        <div id="indexProgressBar" class="progress-bar"><div class="progress-bar-fill" id="indexProgressFill"></div></div>
+
+        <div class="card">
+            <div class="card-title">Параметры</div>
+            <div class="geo-selectors">
+                <div class="geo-selector-block">
+                    <div class="block-label">Города</div>
+                    <div class="industries-toolbar">
+                        <input type="text" id="indexSearchCities" placeholder="Поиск городов...">
+                        <button class="btn-sm" onclick="MARKET.index.selectDefaultCities()">Крупные 44</button>
+                        <button class="btn-sm" onclick="MARKET.index.clearCities()">Снять все</button>
+                    </div>
+                    <div id="indexCitiesList" class="industries-list">
+                        <div class="loading-placeholder"><span>Загрузится при открытии вкладки</span></div>
+                    </div>
+                    <div class="selected-count">Выбрано городов: <span id="indexCitiesCount">0</span> <span style="color:var(--text-muted)">(пусто = крупные 44)</span></div>
+                </div>
+                <div class="geo-selector-block">
+                    <div class="block-label">Профобласти</div>
+                    <div class="industries-toolbar">
+                        <input type="text" id="indexSearchProf" placeholder="Поиск профобластей...">
+                        <button class="btn-sm" onclick="MARKET.index.selectAllProf()">Все</button>
+                        <button class="btn-sm" onclick="MARKET.index.clearProf()">Снять все</button>
+                    </div>
+                    <div id="indexProfList" class="industries-list">
+                        <div class="loading-placeholder"><span>Загрузится при открытии вкладки</span></div>
+                    </div>
+                    <div class="selected-count">Выбрано профобластей: <span id="indexProfCount">0</span> <span style="color:var(--text-muted)">(пусто = все)</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="actions">
+                <button class="btn btn-primary" id="indexBtnStart" onclick="MARKET.index.start()"><span>Собрать данные</span></button>
+                <button class="btn btn-secondary" id="indexBtnXlsx" onclick="MARKET.index.download()" disabled>Скачать Excel</button>
+            </div>
+        </div>
+
+        <div class="card scrape-log-card" id="indexLogCard">
+            <div class="card-title">Лог</div>
+            <div class="scrape-log" id="indexLog"></div>
+        </div>
+
+        <div class="card geo-results-card" id="indexResultsCard">
+            <div class="results-header"><div class="results-count">hh.индекс — <span id="indexAsOf"></span></div></div>
+            <div class="geo-pivot-wrap">
+                <table class="geo-pivot"><thead id="indexPivotHead"></thead><tbody id="indexPivotBody"></tbody></table>
+            </div>
+        </div>
+
+    </div>
+    <!-- конец tabIndex -->
+
+    <!-- ===================== ТАБ: ЗАРПЛАТЫ ===================== -->
+    <div class="tab-content" id="tabSalary">
+
+        <div class="card">
+            <div class="card-title">Рыночные зарплаты — средние по профобласти</div>
+            <p style="font-size:0.88rem;color:var(--text-muted);margin:0;line-height:1.55">
+                Источник — открытая статистика <b>stats.hh.ru</b>: средняя <b>предлагаемая</b> ЗП (по вакансиям)
+                и средняя <b>ожидаемая</b> ЗП (по резюме). На экране — предлагаемая; в Excel оба значения отдельными листами.<br>
+                <span style="color:#ff6b6b">⚠ Это СРЕДНЕЕ, а не вилка min–max. Вилку HH показывает только в форме создания
+                вакансии под аккаунтом работодателя — открытым путём она недоступна.</span>
+            </p>
+        </div>
+
+        <div id="salaryStatusBar" class="status-bar">
+            <div class="spinner" id="salaryStatusSpinner"></div>
+            <span id="salaryStatusText"></span>
+        </div>
+        <div id="salaryProgressBar" class="progress-bar"><div class="progress-bar-fill" id="salaryProgressFill"></div></div>
+
+        <div class="card">
+            <div class="card-title">Параметры</div>
+            <div class="geo-selectors">
+                <div class="geo-selector-block">
+                    <div class="block-label">Города</div>
+                    <div class="industries-toolbar">
+                        <input type="text" id="salarySearchCities" placeholder="Поиск городов...">
+                        <button class="btn-sm" onclick="MARKET.salary.selectDefaultCities()">Крупные 44</button>
+                        <button class="btn-sm" onclick="MARKET.salary.clearCities()">Снять все</button>
+                    </div>
+                    <div id="salaryCitiesList" class="industries-list">
+                        <div class="loading-placeholder"><span>Загрузится при открытии вкладки</span></div>
+                    </div>
+                    <div class="selected-count">Выбрано городов: <span id="salaryCitiesCount">0</span> <span style="color:var(--text-muted)">(пусто = 5 крупных)</span></div>
+                </div>
+                <div class="geo-selector-block">
+                    <div class="block-label">Профобласти</div>
+                    <div class="industries-toolbar">
+                        <input type="text" id="salarySearchProf" placeholder="Поиск профобластей...">
+                        <button class="btn-sm" onclick="MARKET.salary.selectAllProf()">Все</button>
+                        <button class="btn-sm" onclick="MARKET.salary.clearProf()">Снять все</button>
+                    </div>
+                    <div id="salaryProfList" class="industries-list">
+                        <div class="loading-placeholder"><span>Загрузится при открытии вкладки</span></div>
+                    </div>
+                    <div class="selected-count">Выбрано профобластей: <span id="salaryProfCount">0</span> <span style="color:var(--text-muted)">(пусто = все)</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="actions">
+                <button class="btn btn-primary" id="salaryBtnStart" onclick="MARKET.salary.start()"><span>Собрать данные</span></button>
+                <button class="btn btn-secondary" id="salaryBtnXlsx" onclick="MARKET.salary.download()" disabled>Скачать Excel</button>
+            </div>
+        </div>
+
+        <div class="card scrape-log-card" id="salaryLogCard">
+            <div class="card-title">Лог</div>
+            <div class="scrape-log" id="salaryLog"></div>
+        </div>
+
+        <div class="card geo-results-card" id="salaryResultsCard">
+            <div class="results-header"><div class="results-count">Средняя предлагаемая ЗП, ₽ — <span id="salaryAsOf"></span></div></div>
+            <div class="geo-pivot-wrap">
+                <table class="geo-pivot"><thead id="salaryPivotHead"></thead><tbody id="salaryPivotBody"></tbody></table>
+            </div>
+        </div>
+
+    </div>
+    <!-- конец tabSalary -->
+
 </main>
 
 <footer class="footer">
@@ -634,6 +778,9 @@
         if (tab === 'companies') {
             loadCompaniesPresets();
         }
+
+        if (tab === 'index') MARKET.index.load();
+        if (tab === 'salary') MARKET.salary.load();
     }
 
     function capitalize(str) {
@@ -1635,6 +1782,308 @@
             showGeoStatus('Ошибка: ' + e.message, 'error');
         }
     }
+
+    // ================================================================
+    // ТАБЫ: ИНДЕКС ХХ + ЗАРПЛАТЫ (источник stats.hh.ru, общая фабрика)
+    // ================================================================
+
+    // Крупные города РФ (~500k+) — дефолтный набор для индекса/зарплат.
+    const MARKET_DEFAULT_CITIES = [
+        'Москва', 'Санкт-Петербург', 'Новосибирск', 'Екатеринбург', 'Казань',
+        'Нижний Новгород', 'Челябинск', 'Красноярск', 'Самара', 'Уфа',
+        'Ростов-на-Дону', 'Краснодар', 'Омск', 'Воронеж', 'Пермь',
+        'Волгоград', 'Саратов', 'Тюмень', 'Тольятти', 'Ижевск',
+        'Барнаул', 'Ульяновск', 'Иркутск', 'Хабаровск', 'Махачкала',
+        'Владивосток', 'Ярославль', 'Оренбург', 'Томск', 'Кемерово',
+        'Новокузнецк', 'Рязань', 'Набережные Челны', 'Астрахань', 'Пенза',
+        'Липецк', 'Киров', 'Чебоксары', 'Балашиха', 'Калининград',
+        'Тула', 'Курск', 'Севастополь',
+    ];
+
+    // Общий справочник профобластей (грузим один раз, делят обе вкладки)
+    let _marketProfAreas = null;
+    let _marketProfPromise = null;
+    async function loadMarketProfAreas() {
+        if (_marketProfAreas) return _marketProfAreas;
+        if (!_marketProfPromise) {
+            _marketProfPromise = fetch('/api/market/prof-areas')
+                .then(r => r.json())
+                .then(d => { _marketProfAreas = d.prof_areas || []; return _marketProfAreas; })
+                .catch(() => { _marketProfAreas = []; return _marketProfAreas; });
+        }
+        return _marketProfPromise;
+    }
+
+    function makeMarketTab(prefix, kind, endpoints, opts) {
+        const $ = id => document.getElementById(prefix + id);
+        const state = {
+            loaded: false,
+            running: false,
+            lastBody: null,
+            cities: [],                 // [{id,name}]
+            profAreas: [],              // [{id,name}]
+            selectedCities: new Set(),  // names
+            selectedProf: new Set(),    // ids (число или "all")
+        };
+
+        function showStatus(text, type = '') {
+            const bar = $('StatusBar');
+            bar.className = 'status-bar visible' + (type ? ' ' + type : '');
+            $('StatusText').textContent = text;
+            $('StatusSpinner').style.display = type === '' ? 'block' : 'none';
+        }
+        function showProgress(v) { $('ProgressBar').className = v ? 'progress-bar visible' : 'progress-bar'; }
+        function setProgress(p) { $('ProgressFill').style.width = p + '%'; }
+        function showLog(v) { $('LogCard').className = v ? 'card scrape-log-card visible' : 'card scrape-log-card'; }
+        function addLog(text, type = '') {
+            const log = $('Log');
+            const line = document.createElement('div');
+            line.className = 'log-line' + (type ? ' log-' + type : '');
+            const time = new Date().toLocaleTimeString('ru-RU');
+            line.innerHTML = `<span class="log-time">${time}</span> ${escapeHtml(text)}`;
+            log.appendChild(line);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        // ----- Селекторы -----
+        function renderCities() {
+            const filter = $('SearchCities').value.toLowerCase().trim();
+            const list = $('CitiesList');
+            list.innerHTML = '';
+            let filtered;
+            if (filter) {
+                filtered = state.cities.filter(c => c.name.toLowerCase().includes(filter));
+            } else {
+                const show = new Set([...state.selectedCities, ...MARKET_DEFAULT_CITIES]);
+                filtered = state.cities.filter(c => show.has(c.name));
+            }
+            if (filtered.length === 0) {
+                list.innerHTML = '<div class="loading-placeholder"><span>Ничего не найдено</span></div>';
+                $('CitiesCount').textContent = state.selectedCities.size;
+                return;
+            }
+            filtered.slice(0, 200).forEach(c => {
+                const label = document.createElement('label');
+                label.className = 'industry-item';
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.checked = state.selectedCities.has(c.name);
+                cb.addEventListener('change', () => {
+                    cb.checked ? state.selectedCities.add(c.name) : state.selectedCities.delete(c.name);
+                    $('CitiesCount').textContent = state.selectedCities.size;
+                });
+                const span = document.createElement('span');
+                span.textContent = c.name;
+                label.appendChild(cb); label.appendChild(span);
+                list.appendChild(label);
+            });
+            $('CitiesCount').textContent = state.selectedCities.size;
+        }
+
+        function renderProf() {
+            const filter = $('SearchProf').value.toLowerCase().trim();
+            const list = $('ProfList');
+            list.innerHTML = '';
+            const filtered = filter
+                ? state.profAreas.filter(p => p.name.toLowerCase().includes(filter))
+                : state.profAreas;
+            if (filtered.length === 0) {
+                list.innerHTML = '<div class="loading-placeholder"><span>Ничего не найдено</span></div>';
+                $('ProfCount').textContent = state.selectedProf.size;
+                return;
+            }
+            filtered.forEach(p => {
+                const label = document.createElement('label');
+                label.className = 'industry-item';
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.checked = state.selectedProf.has(p.id);
+                cb.addEventListener('change', () => {
+                    cb.checked ? state.selectedProf.add(p.id) : state.selectedProf.delete(p.id);
+                    $('ProfCount').textContent = state.selectedProf.size;
+                });
+                const span = document.createElement('span');
+                span.textContent = p.name;
+                label.appendChild(cb); label.appendChild(span);
+                list.appendChild(label);
+            });
+            $('ProfCount').textContent = state.selectedProf.size;
+        }
+
+        async function load() {
+            if (state.loaded) return;
+            state.loaded = true;
+            $('SearchCities').addEventListener('input', renderCities);
+            $('SearchProf').addEventListener('input', renderProf);
+            try {
+                const [citiesRes, profAreas] = await Promise.all([
+                    fetch('/api/geo/cities').then(r => r.json()),
+                    loadMarketProfAreas(),
+                ]);
+                state.cities = citiesRes.cities || [];
+                state.profAreas = profAreas || [];
+                renderCities();
+                renderProf();
+            } catch (e) {
+                showStatus('Не удалось загрузить справочники: ' + e.message, 'error');
+            }
+        }
+
+        // ----- Пивот -----
+        function renderPivot(event) {
+            const card = $('ResultsCard');
+            card.className = 'card geo-results-card visible';
+            $('AsOf').textContent = 'данные на: ' + (event.as_of || '—');
+
+            const profAreas = event.prof_areas || [];
+            const cities = event.cities || [];
+            const valueOf = r => (kind === 'index' ? r.value : r.averageCompensation);
+            const cell = {};
+            (event.rows || []).forEach(r => { cell[r.city + '|' + r.prof_area_id] = valueOf(r); });
+
+            const thead = $('PivotHead');
+            thead.innerHTML = '<tr><th>Город / Регион</th>' +
+                profAreas.map(p => `<th>${escapeHtml(p.name)}</th>`).join('') + '</tr>';
+
+            const tbody = $('PivotBody');
+            tbody.innerHTML = '';
+            cities.forEach(city => {
+                let html = `<td class="city-cell">${escapeHtml(city)}</td>`;
+                profAreas.forEach(p => {
+                    const v = cell[city + '|' + p.id];
+                    if (v === null || v === undefined) {
+                        html += '<td class="geo-cell-empty">—</td>';
+                    } else {
+                        const txt = kind === 'salary' ? Math.round(v).toLocaleString('ru-RU') : v;
+                        html += `<td style="text-align:center">${txt}</td>`;
+                    }
+                });
+                const tr = document.createElement('tr');
+                tr.innerHTML = html;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // ----- Запуск (SSE) -----
+        async function start() {
+            if (state.running) return;
+            const body = {
+                city_names: Array.from(state.selectedCities),
+                prof_area_ids: Array.from(state.selectedProf),
+            };
+            state.running = true;
+            state.lastBody = body;
+            $('BtnStart').disabled = true;
+            $('BtnXlsx').disabled = true;
+            $('ResultsCard').className = 'card geo-results-card';
+            $('Log').innerHTML = '';
+            showLog(true);
+            showStatus('Запускаем сбор...');
+            showProgress(true);
+            setProgress(0);
+            addLog('Сбор запущен...', 'info');
+
+            try {
+                const res = await fetch(endpoints.stream, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body),
+                });
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                while (true) {
+                    const {done, value} = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, {stream: true});
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+                    for (const line of lines) {
+                        if (!line.startsWith('data: ')) continue;
+                        const jsonStr = line.slice(6);
+                        if (!jsonStr) continue;
+                        let event;
+                        try { event = JSON.parse(jsonStr); } catch (e) { continue; }
+
+                        if (event.type === 'progress') {
+                            const msg = event.status_text || '...';
+                            showStatus(msg);
+                            if (event.total > 0) setProgress(Math.min((event.done / event.total) * 100, 99));
+                            addLog(msg);
+                        }
+                        if (event.type === 'result') {
+                            setProgress(100);
+                            showStatus('Готово! ' + (event.cities || []).length + ' городов.', 'success');
+                            addLog('Сбор завершён', 'success');
+                            (event.region_fallback || []).length &&
+                                addLog('Уровень региона: ' + event.region_fallback.join('; '), 'info');
+                            (event.missing_in_stats || []).length &&
+                                addLog('Нет в статистике: ' + event.missing_in_stats.join(', '), 'info');
+                            renderPivot(event);
+                            $('BtnXlsx').disabled = false;
+                        }
+                        if (event.type === 'error') {
+                            showStatus(event.error, 'error');
+                            addLog('Ошибка: ' + event.error, 'error');
+                        }
+                    }
+                }
+            } catch (e) {
+                showStatus('Ошибка: ' + e.message, 'error');
+                addLog('Ошибка соединения: ' + e.message, 'error');
+            } finally {
+                state.running = false;
+                $('BtnStart').disabled = false;
+                setTimeout(() => showProgress(false), 1500);
+            }
+        }
+
+        async function download() {
+            $('BtnXlsx').disabled = true;
+            showStatus('Формируем Excel...');
+            try {
+                const res = await fetch(endpoints.xlsx, {method: 'POST'});
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    showStatus(data.detail || data.error || 'Ошибка скачивания', 'error');
+                    return;
+                }
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = endpoints.filename;
+                a.click();
+                URL.revokeObjectURL(url);
+                showStatus('Excel скачан!', 'success');
+            } catch (e) {
+                showStatus('Ошибка: ' + e.message, 'error');
+            } finally {
+                $('BtnXlsx').disabled = false;
+            }
+        }
+
+        return {
+            load, start, download,
+            selectDefaultCities() { MARKET_DEFAULT_CITIES.forEach(n => state.selectedCities.add(n)); renderCities(); },
+            clearCities() { state.selectedCities.clear(); renderCities(); },
+            selectAllProf() { state.profAreas.forEach(p => state.selectedProf.add(p.id)); renderProf(); },
+            clearProf() { state.selectedProf.clear(); renderProf(); },
+        };
+    }
+
+    const MARKET = {
+        index: makeMarketTab('index', 'index', {
+            stream: '/api/market/index/stream',
+            xlsx: '/api/market/index/xlsx',
+            filename: 'hh_index.xlsx',
+        }),
+        salary: makeMarketTab('salary', 'salary', {
+            stream: '/api/market/salary/stream',
+            xlsx: '/api/market/salary/xlsx',
+            filename: 'hh_salary.xlsx',
+        }),
+    };
 </script>
 
 </body>

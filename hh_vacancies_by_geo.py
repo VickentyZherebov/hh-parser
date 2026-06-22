@@ -134,13 +134,24 @@ def load_professional_roles() -> list[dict]:
 
 # ── Резолв городов ────────────────────────────────────────────────────────────
 
+# Явные соответствия для городов, которые в дереве HH записаны с уточнением
+# региона в скобках и потому неоднозначны при автопоиске (есть тёзки, в т.ч. в
+# Беларуси). Ключ — название в нижнем регистре, значение — area_id HH.
+CITY_ID_OVERRIDES: dict[str, int] = {
+    "иваново": 32,  # Иваново (Ивановская область); тёзка — Иваново (Брестская обл.)
+}
+
+
 def resolve_city_ids(city_names: list[str]) -> dict[str, int]:
     """
     Определяет area_id HH.ru для каждого города по названию.
 
-    Загружает дерево регионов (кэшируется) и ищет по точному совпадению
-    нижнего регистра. Города, которые не удалось найти, пропускаются
-    (в лог пишется предупреждение).
+    Логика поиска по названию (нижний регистр):
+      1. явный override (CITY_ID_OVERRIDES) — для неоднозначных городов;
+      2. точное совпадение в дереве регионов;
+      3. fallback: ровно один ключ вида «город (…)» (город записан с уточнением
+         региона в скобках, и тёзок нет) — берём его.
+    Города, которые не удалось определить, пропускаются (предупреждение в лог).
 
     Возвращает dict: city_name -> area_id (только найденные города).
     """
@@ -150,10 +161,20 @@ def resolve_city_ids(city_names: list[str]) -> dict[str, int]:
 
     for city in city_names:
         key = city.lower().strip()
+        if key in CITY_ID_OVERRIDES:
+            result[city] = CITY_ID_OVERRIDES[key]
+            continue
         if key in area_index:
             area_id, canonical = area_index[key]
             result[city] = area_id
             logger.debug("Город найден: %s -> area_id=%d (%s)", city, area_id, canonical)
+            continue
+        # fallback: единственный ключ «город (что-то)»
+        prefix = key + " ("
+        candidates = [v for k, v in area_index.items() if k.startswith(prefix)]
+        if len(candidates) == 1:
+            result[city] = candidates[0][0]
+            logger.debug("Город найден по скобочному варианту: %s -> %s", city, candidates[0])
         else:
             not_found.append(city)
             logger.warning("Город не найден в дереве HH.ru: %s", city)

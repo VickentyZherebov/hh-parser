@@ -15,6 +15,9 @@ RUN playwright install-deps chromium && playwright install chromium
 COPY hh_companies_by_industry.py .
 COPY hh_vacancies_by_geo.py .
 COPY hh_browser_fetcher.py .
+COPY hh_market_stats.py .
+COPY hh_market_index.py .
+COPY hh_market_salary.py .
 COPY manage.py .
 COPY web/ web/
 

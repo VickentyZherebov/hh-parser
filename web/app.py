@@ -84,6 +84,13 @@ _last_scrape_result: Optional[dict] = None
 # Кэш последнего результата гео-парсинга — чтобы «Скачать Excel» не парсил заново
 _last_geo_result: Optional[dict] = None
 
+# Кэши последних результатов рыночной статистики (индекс / зарплаты) — для «Скачать Excel»
+_last_index_result: Optional[dict] = None
+_last_salary_result: Optional[dict] = None
+
+# Путь к дисковому кэшу датасета stats.hh.ru (общий с CLI-модулями)
+STATS_CACHE_PATH = str(Path(__file__).resolve().parent.parent / "data" / "stats_hh_cache.json")
+
 
 # ---------- Auth middleware ----------
 
@@ -153,6 +160,11 @@ class GeoScrapeRequest(BaseModel):
     city_names: list[str] = []         # названия городов
     role_ids: list[int] = []           # ID профессиональных ролей HH.ru
     search_texts: list = []            # строки или {"text": str, "exact": bool}
+
+
+class MarketRequest(BaseModel):
+    city_names: list[str] = []         # названия городов (пусто → дефолтный набор модуля)
+    prof_area_ids: list = []           # id профобластей + опц. "all" (пусто → все)
 
 
 # ---------- Страницы ----------
@@ -429,6 +441,134 @@ async def geo_scrape_xlsx(req: GeoScrapeRequest, request: Request):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=hh_vacancies.xlsx"},
     )
+
+
+# ---------- Market stats endpoints (hh.индекс + зарплаты, источник stats.hh.ru) ----------
+
+@app.get("/api/market/prof-areas")
+async def market_prof_areas():
+    """Справочник профобластей HH (для селектора столбцов индекса/зарплат)."""
+    try:
+        import hh_market_stats as stats
+        areas = await asyncio.to_thread(stats.load_prof_areas, include_all=True)
+        return {"ok": True, "prof_areas": areas}
+    except Exception as e:
+        logger.exception("Ошибка загрузки профобластей")
+        return {"ok": False, "error": str(e)}
+
+
+def _market_stream(req: MarketRequest, build_fn, kind: str) -> StreamingResponse:
+    """
+    Общий SSE-генератор для индекса/зарплат: гоняет синхронную build_fn в потоке,
+    шлёт progress/result/error. build_fn(cities, prof_area_ids, *, cache_path,
+    progress_cb) -> dict. Результат кэшируется в _last_index/salary_result.
+    """
+    q: queue.Queue = queue.Queue()
+
+    cities = req.city_names or None          # пусто → дефолтный набор модуля
+    prof_area_ids = req.prof_area_ids or None  # пусто → все профобласти
+
+    def worker():
+        try:
+            q.put({"type": "progress", "status_text": "Загружаю статистику stats.hh.ru...",
+                   "done": 0, "total": 0})
+
+            def on_progress(p: dict):
+                q.put({"type": "progress", **p})
+
+            result = build_fn(
+                cities, prof_area_ids,
+                cache_path=STATS_CACHE_PATH,
+                progress_cb=on_progress,
+            )
+
+            global _last_index_result, _last_salary_result
+            if kind == "index":
+                _last_index_result = result
+            else:
+                _last_salary_result = result
+
+            q.put({
+                "type": "result",
+                "kind": kind,
+                "as_of": result.get("as_of"),
+                "cities": result.get("cities", []),
+                "prof_areas": result.get("prof_areas", []),
+                "rows": result.get("rows", []),
+                "region_fallback": result.get("region_fallback", []),
+                "missing_cities": result.get("missing_cities", []),
+                "missing_in_stats": result.get("missing_in_stats", []),
+            })
+        except Exception as e:
+            logger.exception("Ошибка market-парсинга (%s)", kind)
+            q.put({"type": "error", "error": str(e)})
+        finally:
+            q.put(None)
+
+    async def event_generator():
+        asyncio.get_running_loop().run_in_executor(None, worker)
+        while True:
+            try:
+                event = await asyncio.to_thread(q.get, timeout=300)
+            except Exception:
+                break
+            if event is None:
+                break
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+async def _market_xlsx(cached: Optional[dict], export_fn, filename: str) -> StreamingResponse:
+    """Отдаёт закэшированный результат как XLSX через export_fn(result, path)."""
+    if not cached or cached.get("rows") is None:
+        raise HTTPException(status_code=400, detail="Сначала запустите сбор данных")
+
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+        tmp_path = tmp.name
+    try:
+        await asyncio.to_thread(export_fn, cached, tmp_path)
+        xlsx_bytes = Path(tmp_path).read_bytes()
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+    return StreamingResponse(
+        iter([xlsx_bytes]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@app.post("/api/market/index/stream")
+async def market_index_stream(req: MarketRequest, request: Request):
+    """SSE: hh.индекс «город × профобласть» из stats.hh.ru."""
+    require_auth(request)
+    from hh_market_index import build_index_table
+    return _market_stream(req, build_index_table, "index")
+
+
+@app.post("/api/market/index/xlsx")
+async def market_index_xlsx(request: Request):
+    """XLSX последнего результата индекса."""
+    require_auth(request)
+    from hh_market_index import export_index_to_xlsx
+    return await _market_xlsx(_last_index_result, export_index_to_xlsx, "hh_index.xlsx")
+
+
+@app.post("/api/market/salary/stream")
+async def market_salary_stream(req: MarketRequest, request: Request):
+    """SSE: средние зарплаты (предлагаемая + ожидаемая) «город × профобласть»."""
+    require_auth(request)
+    from hh_market_salary import build_salary_table
+    return _market_stream(req, build_salary_table, "salary")
+
+
+@app.post("/api/market/salary/xlsx")
+async def market_salary_xlsx(request: Request):
+    """XLSX последнего результата зарплат (2 листа: предлагаемая / ожидаемая)."""
+    require_auth(request)
+    from hh_market_salary import export_salary_to_xlsx
+    return await _market_xlsx(_last_salary_result, export_salary_to_xlsx, "hh_salary.xlsx")
 
 
 # ---------- Существующие роуты (companies by industry) ----------
