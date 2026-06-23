@@ -88,6 +88,9 @@ _last_geo_result: Optional[dict] = None
 _last_index_result: Optional[dict] = None
 _last_salary_result: Optional[dict] = None
 
+# Кэш последнего гео-Excel Додо (байты) — для «Скачать»
+_last_dodo_xlsx: Optional[bytes] = None
+
 # Путь к дисковому кэшу датасета stats.hh.ru (общий с CLI-модулями)
 STATS_CACHE_PATH = str(Path(__file__).resolve().parent.parent / "data" / "stats_hh_cache.json")
 
@@ -569,6 +572,56 @@ async def market_salary_xlsx(request: Request):
     require_auth(request)
     from hh_market_salary import export_salary_to_xlsx
     return await _market_xlsx(_last_salary_result, export_salary_to_xlsx, "hh_salary.xlsx")
+
+
+# ---------- Dodo endpoints (гео-найм Додо: парс → прод-БД + Excel) ----------
+
+@app.post("/api/dodo/run/stream")
+async def dodo_run_stream(request: Request):
+    """SSE: запускает парсинг Додо (источник API воронки HH), пишет в прод-БД
+    авилидс (дашборд освежается) и собирает гео-Excel для скачивания."""
+    require_auth(request)
+    q: queue.Queue = queue.Queue()
+
+    def worker():
+        try:
+            import dodo
+            stats = dodo.run(progress_cb=lambda m: q.put({"type": "progress", "status_text": m}))
+            q.put({"type": "progress", "status_text": "Собираю Excel…"})
+            global _last_dodo_xlsx
+            _last_dodo_xlsx = dodo.build_geo_xlsx()
+            q.put({"type": "result", **stats})
+        except Exception as e:  # noqa: BLE001
+            logger.exception("Ошибка парсинга Додо")
+            q.put({"type": "error", "error": str(e)})
+        finally:
+            q.put(None)
+
+    async def event_generator():
+        asyncio.get_running_loop().run_in_executor(None, worker)
+        while True:
+            try:
+                event = await asyncio.to_thread(q.get, timeout=600)
+            except Exception:
+                break
+            if event is None:
+                break
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.post("/api/dodo/xlsx")
+async def dodo_xlsx(request: Request):
+    """Отдаёт последний собранный гео-Excel Додо."""
+    require_auth(request)
+    if not _last_dodo_xlsx:
+        raise HTTPException(status_code=400, detail="Сначала запустите парсинг")
+    return StreamingResponse(
+        iter([_last_dodo_xlsx]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=dodo_geo.xlsx"},
+    )
 
 
 # ---------- Существующие роуты (companies by industry) ----------

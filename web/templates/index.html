@@ -271,6 +271,7 @@
     <button class="tab-btn" onclick="switchTab('geo')" id="tabBtnGeo">Вакансии по гео</button>
     <button class="tab-btn" onclick="switchTab('index')" id="tabBtnIndex">Индекс ХХ</button>
     <button class="tab-btn" onclick="switchTab('salary')" id="tabBtnSalary">Зарплаты</button>
+    <button class="tab-btn" onclick="switchTab('dodo')" id="tabBtnDodo">Додо 🍕</button>
 </div>
 
 <main class="container">
@@ -740,6 +741,45 @@
 
     </div>
     <!-- конец tabSalary -->
+
+    <!-- ===================== ТАБ: ДОДО ===================== -->
+    <div class="tab-content" id="tabDodo">
+
+        <div class="card">
+            <div class="card-title">Додо — гео-найм пиццерий 🍕</div>
+            <p style="font-size:0.88rem;color:var(--text-muted);margin:0;line-height:1.55">
+                Один клик — и свежий срез по всей сети Додо: какие вакансии открыты в каждом городе
+                и на каждой пиццерии (как видит кандидат в воронке на HH), с зарплатами. Парсинг идёт
+                напрямую из источника, занимает <b>~3 минуты</b>. По готовности — скачай Excel «куда постить»
+                и/или открой дашборд.
+            </p>
+        </div>
+
+        <div id="dodoStatusBar" class="status-bar">
+            <div class="spinner" id="dodoStatusSpinner"></div>
+            <span id="dodoStatusText"></span>
+        </div>
+        <div id="dodoProgressBar" class="progress-bar"><div class="progress-bar-fill" id="dodoProgressFill"></div></div>
+
+        <div class="card">
+            <div class="actions">
+                <button class="btn btn-primary" id="dodoBtnRun" onclick="dodoRun()"><span id="dodoBtnRunText">Запустить парсинг</span></button>
+                <button class="btn btn-secondary" id="dodoBtnXlsx" onclick="dodoDownload()" disabled>Скачать Excel «куда постить»</button>
+                <a class="btn btn-secondary" href="https://analytics-new.avileads.ru/d/dodo-geo-2026" target="_blank" style="text-decoration:none">Открыть дашборд ↗</a>
+            </div>
+        </div>
+
+        <div class="card geo-results-card" id="dodoResultsCard">
+            <div class="results-header"><div class="results-count" id="dodoSummary"></div></div>
+        </div>
+
+        <div class="card scrape-log-card" id="dodoLogCard">
+            <div class="card-title">Лог парсинга</div>
+            <div class="scrape-log" id="dodoLog"></div>
+        </div>
+
+    </div>
+    <!-- конец tabDodo -->
 
 </main>
 
@@ -2137,6 +2177,78 @@
             selectAllProf() { state.profAreas.forEach(p => state.selectedProf.add(p.id)); renderProf(); },
             clearProf() { state.selectedProf.clear(); renderProf(); },
         };
+    }
+
+    // ================================================================
+    // ТАБ: ДОДО (запуск парсинга → прод-БД + Excel)
+    // ================================================================
+    let dodoRunning = false;
+    function dodoStatus(t, type='') {
+        const b=document.getElementById('dodoStatusBar');
+        b.className='status-bar visible'+(type?' '+type:'');
+        document.getElementById('dodoStatusText').textContent=t;
+        document.getElementById('dodoStatusSpinner').style.display=type===''?'block':'none';
+    }
+    function dodoLog(t) {
+        const log=document.getElementById('dodoLog');
+        const line=document.createElement('div'); line.className='log-line';
+        line.innerHTML=`<span class="log-time">${new Date().toLocaleTimeString('ru-RU')}</span> ${escapeHtml(t)}`;
+        log.appendChild(line); log.scrollTop=log.scrollHeight;
+    }
+    async function dodoRun() {
+        if (dodoRunning) return;
+        dodoRunning=true;
+        document.getElementById('dodoBtnRun').disabled=true;
+        document.getElementById('dodoBtnXlsx').disabled=true;
+        document.getElementById('dodoResultsCard').className='card geo-results-card';
+        document.getElementById('dodoLog').innerHTML='';
+        document.getElementById('dodoLogCard').className='card scrape-log-card visible';
+        document.getElementById('dodoProgressBar').className='progress-bar visible';
+        document.getElementById('dodoProgressFill').style.width='15%';
+        dodoStatus('Парсинг запущен… (~3 минуты, не закрывай вкладку)');
+        dodoLog('Старт');
+        try {
+            const res=await fetch('/api/dodo/run/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+            const reader=res.body.getReader(); const dec=new TextDecoder(); let buf='';
+            while(true){
+                const {done,value}=await reader.read(); if(done) break;
+                buf+=dec.decode(value,{stream:true});
+                const lines=buf.split('\n'); buf=lines.pop();
+                for(const line of lines){
+                    if(!line.startsWith('data: ')) continue;
+                    const js=line.slice(6); if(!js) continue;
+                    let ev; try{ev=JSON.parse(js);}catch(e){continue;}
+                    if(ev.type==='progress'){ dodoStatus(ev.status_text); dodoLog(ev.status_text);
+                        document.getElementById('dodoProgressFill').style.width='60%'; }
+                    if(ev.type==='result'){
+                        document.getElementById('dodoProgressFill').style.width='100%';
+                        dodoStatus(`Готово! ${ev.cities} городов, ${ev.vacancies} строк вакансий. Дашборд освежён.`,'success');
+                        dodoLog('Готово, БД обновлена, Excel собран');
+                        document.getElementById('dodoResultsCard').className='card geo-results-card visible';
+                        document.getElementById('dodoSummary').textContent=
+                            `Свежий срез: ${ev.cities} городов, ${ev.addresses} адресов, ${ev.vacancies} строк вакансий`;
+                        document.getElementById('dodoBtnXlsx').disabled=false;
+                    }
+                    if(ev.type==='error'){ dodoStatus('Ошибка: '+ev.error,'error'); dodoLog('Ошибка: '+ev.error); }
+                }
+            }
+        } catch(e){ dodoStatus('Ошибка соединения: '+e.message,'error'); }
+        finally {
+            dodoRunning=false;
+            document.getElementById('dodoBtnRun').disabled=false;
+            setTimeout(()=>{document.getElementById('dodoProgressBar').className='progress-bar';},1500);
+        }
+    }
+    async function dodoDownload() {
+        document.getElementById('dodoBtnXlsx').disabled=true;
+        try {
+            const res=await fetch('/api/dodo/xlsx',{method:'POST'});
+            if(!res.ok){ const d=await res.json().catch(()=>({})); dodoStatus(d.detail||'Ошибка скачивания','error'); return; }
+            const blob=await res.blob(); const url=URL.createObjectURL(blob);
+            const a=document.createElement('a'); a.href=url; a.download='dodo_geo.xlsx'; a.click(); URL.revokeObjectURL(url);
+            dodoStatus('Excel скачан!','success');
+        } catch(e){ dodoStatus('Ошибка: '+e.message,'error'); }
+        finally { document.getElementById('dodoBtnXlsx').disabled=false; }
     }
 
     const MARKET = {

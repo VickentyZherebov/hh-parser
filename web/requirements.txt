@@ -9,3 +9,4 @@ python-jose[cryptography]
 bcrypt
 python-multipart
 playwright==1.59.0
+psycopg[binary]
