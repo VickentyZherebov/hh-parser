@@ -2,6 +2,8 @@
 
 import pytest
 
+from dodo import extract_landing_cities, landing_open
+
 from hh_companies_by_industry import (
     with_query,
     extract_max_page,
@@ -10,6 +12,27 @@ from hh_companies_by_industry import (
     soupify,
     HHBlockedError,
 )
+
+
+# ---------- Dodo landing filters ----------
+
+def test_extract_landing_cities():
+    html = "<script>var CITIES_ONLY = ['Москва', 'Аксай (Ростовская область)'];</script>"
+    assert extract_landing_cities(html) == {"Москва", "Аксай (Ростовская область)"}
+
+
+def test_extract_landing_cities_rejects_missing_list():
+    with pytest.raises(RuntimeError, match="CITIES_ONLY"):
+        extract_landing_cities("<html></html>")
+
+
+@pytest.mark.parametrize("city", ["Хабаровск", "Махачкала"])
+def test_dodo_pizzamaker_is_closed_outside_landing_allowlist(city):
+    assert not landing_open(city, "Пиццамейкер", {"Москва", "Казань"})
+
+
+def test_dodo_pizzamaker_is_open_for_allowed_city():
+    assert landing_open("Москва", "Пиццамейкер", {"Москва", "Казань"})
 
 
 # ---------- with_query ----------

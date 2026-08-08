@@ -9,14 +9,21 @@ avileads-db-tunnel) и сборка гео-Excel «куда постить».
 """
 from __future__ import annotations
 
+import ast
 import io
 import os
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
 API = "https://hh.htdev.ru/dodo_api.php"
+LANDING_URL = "https://hh.ru/article/31830"
+LANDING_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                  "Chrome/124.0 Safari/537.36"
+}
 KEY = os.environ.get("DODO_API_KEY", "jgn3w9ufhw3fwq3f3wbffiowsegsd32q4r5q2")
 DSN = os.environ.get("DODO_PG_DSN", "")  # postgresql://claude_ai:...@avileads-db-tunnel:5432/avileads
 
@@ -37,6 +44,36 @@ def funnel_open(name: str) -> bool:
     if any(x in n for x in ("велосипед", "скутер", "мопед")):
         return False
     return any(x in n for x in ("курьер", "кассир", "пиццамейкер"))
+
+
+def extract_landing_cities(html: str) -> set[str]:
+    """Извлечь белый список городов, который реально показывает HH-лендинг."""
+    match = re.search(r"var\s+CITIES_ONLY\s*=\s*(\[.*?\])\s*;", html, re.DOTALL)
+    if not match:
+        raise RuntimeError("На HH-лендинге не найден CITIES_ONLY")
+    cities = ast.literal_eval(match.group(1))
+    if not isinstance(cities, list) or not cities:
+        raise RuntimeError("Белый список городов HH-лендинга пуст или имеет неверный формат")
+    return {str(city).strip() for city in cities if str(city).strip()}
+
+
+def load_landing_cities(*, retries: int = 3) -> set[str]:
+    """Загрузить актуальный белый список; при ошибке не строить ложную выгрузку."""
+    last = None
+    for attempt in range(retries):
+        try:
+            response = requests.get(LANDING_URL, headers=LANDING_HEADERS, timeout=30)
+            response.raise_for_status()
+            return extract_landing_cities(response.text)
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+            time.sleep(min(2.0 * (attempt + 1), 6))
+    raise RuntimeError(f"Не удалось прочитать список городов HH-лендинга: {last}")
+
+
+def landing_open(city: str, vacancy: str, allowed_cities: set[str]) -> bool:
+    """Вакансия доступна трафику, только если её показывают оба фильтра лендинга."""
+    return city in allowed_cities and funnel_open(vacancy)
 
 
 def _call(task: str, *, retries: int = 6, **extra) -> list:
@@ -68,6 +105,8 @@ def run(progress_cb=None, *, workers: int = 5) -> dict:
             progress_cb(msg)
 
     # ── сбор ──
+    allowed_cities = load_landing_cities()
+    log(f"Городов на HH-лендинге: {len(allowed_cities)}")
     cities = []
     for _ in range(4):
         cities = _call("getcities")
@@ -84,7 +123,8 @@ def run(progress_cb=None, *, workers: int = 5) -> dict:
             rs = _call("getrestaurants", localityId=city["id"])
         except Exception:
             return []
-        return [{"city_uuid": city["id"], "uuid": u["id"], "seq": i,
+        return [{"city_uuid": city["id"], "city_name": city["name"],
+                 "uuid": u["id"], "seq": i,
                  "address": (u.get("address") or "").strip(),
                  "name": (u.get("name") or "").strip()}
                 for i, u in enumerate(rs, 1)]
@@ -146,7 +186,8 @@ def run(progress_cb=None, *, workers: int = 5) -> dict:
                 continue
             by = {r["name"]: r for r in vac_map.get(u["uuid"], [])}
             for name, r in by.items():
-                rows.append(vals(aid, name, "enabled" if funnel_open(name) else "ratecard", r))
+                status = "enabled" if landing_open(u["city_name"], name, allowed_cities) else "ratecard"
+                rows.append(vals(aid, name, status, r))
             for vt in BASE_ROLES:
                 if vt not in by:
                     rows.append(vals(aid, vt, "disabled", None))
