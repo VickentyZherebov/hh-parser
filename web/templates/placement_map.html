@@ -29,9 +29,16 @@
         .summary { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
         .metric { padding: 8px 12px; border-radius: 10px; background: var(--surface-2); color: var(--text-muted); }
         .metric strong { color: var(--text); }
+        .metric.primary { background: color-mix(in srgb, var(--accent) 14%, var(--surface-2)); }
+        .map-meta { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; margin-top:14px; }
+        .legend { display:flex; flex-wrap:wrap; gap:8px 14px; }
+        .legend-item { display:inline-flex; align-items:center; gap:6px; color:var(--text-muted); font-size:.82rem; }
+        .legend-dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
         .error { color: var(--red); white-space: pre-wrap; }
         .issues { width: 100%; border-collapse: collapse; font-size: .85rem; }
         .issues th, .issues td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
+        details.card summary { cursor:pointer; font-weight:600; }
+        .status-closed { color:var(--text-muted); }
         .leaflet-popup-content a { color: #1166cc; }
         .leaflet-popup-content { line-height: 1.45; }
         @media (max-width: 760px) {
@@ -54,17 +61,17 @@
     <section class="card" id="builderCard">
         <div class="card-title">Собрать свежую карту</div>
         <div class="build-grid">
-            <label>
+            <label class="full">
                 Название карты
                 <input id="mapName" value="Карта размещений HH">
             </label>
-            <div>
+            <div class="full">
                 <label for="rkSearch">Рекламные кампании с источником HH</label>
                 <div class="selector-head">
                     <input id="rkSearch" placeholder="Номер или название РК" oninput="renderRkOptions()">
                     <label class="hint"><input type="checkbox" id="showDisabled" onchange="renderRkOptions()"> выключенные</label>
                 </div>
-                <select id="rkSelect" disabled></select>
+                <select id="rkSelect" onchange="syncMapName()" disabled></select>
                 <div class="hint" id="rkHint">Загружаю список РК…</div>
             </div>
             <div class="full">
@@ -92,6 +99,10 @@
                 <label>РК<select id="rkFilter" onchange="renderMarkers()"></select></label>
                 <button onclick="resetFilters()">Сбросить</button>
             </div>
+            <div class="map-meta">
+                <div class="legend" id="legend"></div>
+                <div class="hint" id="visibleCount"></div>
+            </div>
         </div>
         <div id="map"></div>
         <section class="card" id="issuesCard" style="display:none">
@@ -102,6 +113,14 @@
                 <tbody id="issuesBody"></tbody>
             </table></div>
         </section>
+        <details class="card" id="closedCard" style="display:none">
+            <summary id="closedSummary">Закрытые вакансии</summary>
+            <div class="hint" style="margin-top:8px">Они сохранены в отчёте, но не занимают место на карте.</div>
+            <div style="overflow:auto"><table class="issues">
+                <thead><tr><th>HH ID</th><th>Вакансия</th><th>Компания</th><th>РК</th></tr></thead>
+                <tbody id="closedBody"></tbody>
+            </table></div>
+        </details>
     </section>
 </main>
 
@@ -195,6 +214,14 @@
         ).join('');
     }
 
+    function syncMapName() {
+        const selectedId = Number(document.getElementById('rkSelect').value);
+        const campaign = campaigns.find(item => item.id === selectedId);
+        if (!campaign) return;
+        const suffix = campaign.name ? ` — ${campaign.name}` : '';
+        document.getElementById('mapName').value = `РК ${campaign.id}${suffix} — карта HH`;
+    }
+
     async function loadSnapshot() {
         const response = await fetch(`/api/placement-maps/${MAP_ID}`);
         const data = await response.json();
@@ -217,10 +244,8 @@
             `<span class="metric">Привязано ID: <strong>${s.linked}</strong></span>`,
             `<span class="metric">Активных: <strong>${s.active}</strong></span>`,
             `<span class="metric">Закрытых: <strong>${s.closed}</strong></span>`,
-            `<span class="metric">На карте: <strong>${s.markers}</strong></span>`,
-            `<span class="metric">Требуют внимания: <strong>${s.issues}</strong></span>`,
-            `<span class="metric">Проверено сейчас: <strong>${s.checked}</strong></span>`,
-            `<span class="metric">Из кэша: <strong>${s.cached}</strong></span>`
+            `<span class="metric primary">На карте: <strong>${s.markers}</strong></span>`,
+            `<span class="metric">Без адреса/координат: <strong>${snapshot.issues.filter(item => item.status !== 'closed').length}</strong></span>`
         ].join('');
     }
 
@@ -236,6 +261,9 @@
         const rks = [...new Set(snapshot.markers.map(v => String(v.rk)))].sort((a,b) => Number(a)-Number(b));
         fillSelect('cityFilter', cities, 'Все города');
         fillSelect('rkFilter', rks, 'Все РК');
+        document.getElementById('legend').innerHTML = rks.map(rk =>
+            `<span class="legend-item"><i class="legend-dot" style="background:${colorForRk(rk)}"></i>РК ${escapeHtml(rk)}</span>`
+        ).join('');
     }
 
     function initMap() {
@@ -262,6 +290,8 @@
         const visible = snapshot.markers.filter(item =>
             (!city || item.city === city) && (!rk || String(item.rk) === rk)
         );
+        document.getElementById('visibleCount').textContent =
+            `Показано точек: ${visible.length} из ${snapshot.markers.length}`;
         const bounds = [];
         visible.forEach(item => {
             const point = [item.latitude, item.longitude];
@@ -282,15 +312,29 @@
     }
 
     function renderIssues() {
-        if (!snapshot.issues.length) return;
-        document.getElementById('issuesCard').style.display = 'block';
-        document.getElementById('issuesBody').innerHTML = snapshot.issues.map(item => `
+        const attention = snapshot.issues.filter(item => item.status !== 'closed');
+        const closed = snapshot.issues.filter(item => item.status === 'closed');
+        if (attention.length) {
+            document.getElementById('issuesCard').style.display = 'block';
+            document.getElementById('issuesBody').innerHTML = attention.map(item => `
             <tr>
                 <td><a href="${escapeHtml(item.url)}" target="_blank" rel="noopener">${escapeHtml(item.hh_id)}</a></td>
                 <td>${escapeHtml(item.title)}</td>
                 <td>${escapeHtml(item.employer)}</td>
                 <td>${escapeHtml(item.reasons.join(', '))}</td>
             </tr>`).join('');
+        }
+        if (closed.length) {
+            document.getElementById('closedCard').style.display = 'block';
+            document.getElementById('closedSummary').textContent = `Закрытые вакансии — ${closed.length}`;
+            document.getElementById('closedBody').innerHTML = closed.map(item => `
+            <tr class="status-closed">
+                <td><a href="${escapeHtml(item.url)}" target="_blank" rel="noopener">${escapeHtml(item.hh_id)}</a></td>
+                <td>${escapeHtml(item.title || 'Без названия')}</td>
+                <td>${escapeHtml(item.employer)}</td>
+                <td>${escapeHtml(item.rk)}</td>
+            </tr>`).join('');
+        }
     }
 
     function resetFilters() {
