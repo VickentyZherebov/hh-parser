@@ -6,6 +6,7 @@ from hh_placement_map import (
     VacancyRef,
     VacancyPlacement,
     build_snapshot,
+    geocode_city_centers,
     is_transient_payload,
     parse_rk_ids,
     parse_vacancy_page,
@@ -86,11 +87,11 @@ def test_build_snapshot_separates_markers_and_visible_issues(monkeypatch):
     snapshot = build_snapshot("Контроль", [1187])
     assert snapshot["summary"] == {
         "linked": 3, "active": 2, "closed": 1, "markers": 1,
-        "issues": 2, "checked": 3, "cached": 0,
+        "issues": 2, "checked": 3, "cached": 0, "city_centers": 0,
     }
     assert snapshot["markers"][0]["rk"] == 1187
     reasons = {item["hh_id"]: item["reasons"] for item in snapshot["issues"]}
-    assert "нет адреса" in reasons["11"]
+    assert "на HH не указан адрес или город" in reasons["11"]
     assert "вакансия закрыта или в архиве" in reasons["12"]
 
 
@@ -112,7 +113,21 @@ def test_parse_vacancy_page_detects_hh_challenge():
 def test_old_captcha_cache_is_transient():
     assert is_transient_payload({"status": "active", "title": "Подтвердите, что вы не робот"})
     assert is_transient_payload({"status": "error", "title": ""})
-    assert not is_transient_payload({"status": "active", "title": "Курьер"})
+    assert not is_transient_payload({
+        "status": "active", "title": "Курьер", "address": "Москва, Арбат, 1",
+    })
+
+
+def test_parse_vacancy_page_keeps_city_without_exact_address():
+    ref = VacancyRef("14", 1039, "Тест", "https://hh.ru/vacancy/14")
+    item = parse_vacancy_page(
+        '<h1 data-qa="vacancy-title">Кладовщик</h1>'
+        '<span data-qa="vacancy-address-with-map">Подольск (Московская область)</span>',
+        ref,
+    )
+    assert item.address == ""
+    assert item.city == "Подольск (Московская область)"
+    assert item.location_precision == "city"
 
 
 def test_sqlite_cache_respects_ttl(tmp_path, monkeypatch):
@@ -166,3 +181,30 @@ def test_build_snapshot_fetches_only_new_or_expired_ids(monkeypatch):
     assert snapshot["summary"]["checked"] == 1
     assert snapshot["summary"]["cached"] == 1
     assert {item["hh_id"] for item in snapshot["markers"]} == {"10", "11"}
+
+
+def test_geocode_city_center_and_cache(monkeypatch):
+    item = VacancyPlacement(
+        "20", 1039, "Тест", "https://hh.ru/vacancy/20",
+        title="Кладовщик", city="Волгоград", location_precision="city",
+    )
+    saved = {}
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return [{"lat": "48.7080", "lon": "44.5133", "display_name": "Волгоград"}]
+
+    monkeypatch.setattr("web.db.get_cached_geocodes", lambda queries: {})
+    monkeypatch.setattr("web.db.save_cached_geocode", lambda query, payload: saved.update({query: payload}))
+    monkeypatch.setattr("requests.get", lambda *args, **kwargs: Response())
+    monkeypatch.setattr("hh_placement_map.time.sleep", lambda seconds: None)
+
+    geocode_city_centers([item])
+
+    assert item.latitude == pytest.approx(48.7080)
+    assert item.longitude == pytest.approx(44.5133)
+    assert item.location_precision == "city"
+    assert "Волгоград, Россия" in saved

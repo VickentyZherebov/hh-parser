@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
+import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Callable, Iterable, Optional
@@ -14,12 +16,21 @@ from playwright.async_api import BrowserContext, async_playwright
 
 from hh_browser_fetcher import PAGE_TIMEOUT_MS, ProxyManager, USER_AGENT
 
+logger = logging.getLogger(__name__)
+
 
 BASE_URL = "https://hh.ru"
 DETAIL_CONCURRENCY = int(os.environ.get("HH_PLACEMENT_CONCURRENCY", "4"))
 DETAIL_ATTEMPTS = int(os.environ.get("HH_PLACEMENT_ATTEMPTS", "3"))
 MAX_RKS_PER_REQUEST = int(os.environ.get("HH_PLACEMENT_MAX_RKS", "20"))
 MAX_VACANCIES_PER_REQUEST = int(os.environ.get("HH_PLACEMENT_MAX_VACANCIES", "1500"))
+GEOCODER_URL = os.environ.get(
+    "HH_PLACEMENT_GEOCODER_URL", "https://nominatim.openstreetmap.org/search"
+)
+GEOCODER_USER_AGENT = os.environ.get(
+    "HH_PLACEMENT_GEOCODER_USER_AGENT",
+    "Avileads-HH-Placement-Map/1.0 (support@avileads.ru)",
+)
 
 COORDS_RE = re.compile(
     r'"lat"\s*:\s*(-?\d+(?:\.\d+)?)[\s\S]{0,120}?'
@@ -59,6 +70,7 @@ class VacancyPlacement:
     city: str = ""
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    location_precision: str = "exact"
     status: str = "active"
     error: str = ""
 
@@ -153,7 +165,9 @@ def parse_vacancy_page(html: str, ref: VacancyRef) -> VacancyPlacement:
     title_node = soup.select_one('h1[data-qa="vacancy-title"]') or soup.select_one("h1")
     employer_node = soup.select_one('a[href*="/employer/"]')
     address_node = soup.select_one('[data-qa="vacancy-view-raw-address"]')
+    location_node = soup.select_one('[data-qa="vacancy-address-with-map"]')
     address = address_node.get_text(" ", strip=True) if address_node else ""
+    location = location_node.get_text(" ", strip=True) if location_node else ""
     coords = COORDS_RE.search(html)
     employer_href = employer_node.get("href", "") if employer_node else ""
     employer_match = EMPLOYER_RE.search(employer_href)
@@ -180,9 +194,10 @@ def parse_vacancy_page(html: str, ref: VacancyRef) -> VacancyPlacement:
         employer=employer_node.get_text(" ", strip=True) if employer_node else "",
         employer_id=employer_match.group(1) if employer_match else "",
         address=address,
-        city=address.split(",", 1)[0].strip() if address else "",
+        city=address.split(",", 1)[0].strip() if address else location,
         latitude=float(coords.group(1)) if coords else None,
         longitude=float(coords.group(2)) if coords else None,
+        location_precision="exact" if address else ("city" if location else ""),
         status=status,
         error=error,
     )
@@ -280,7 +295,70 @@ def collect_vacancies(refs: list[VacancyRef]) -> list[VacancyPlacement]:
 def is_transient_payload(payload: dict) -> bool:
     """Отбрасывает ошибки и старые ошибочно закэшированные CAPTCHA-страницы."""
     title = str(payload.get("title", "")).lower()
-    return payload.get("status") == "error" or any(marker in title for marker in CHALLENGE_MARKERS)
+    needs_location_upgrade = (
+        payload.get("status") == "active"
+        and not payload.get("address")
+        and "location_precision" not in payload
+    )
+    return (
+        payload.get("status") == "error"
+        or any(marker in title for marker in CHALLENGE_MARKERS)
+        or needs_location_upgrade
+    )
+
+
+def geocode_city_centers(items: list[VacancyPlacement]) -> None:
+    """Дополняет city-only карточки центром города и сохраняет результат навсегда."""
+    import requests
+    from web.db import get_cached_geocodes, save_cached_geocode
+
+    targets = [
+        item for item in items
+        if item.status == "active"
+        and not item.address
+        and item.city
+        and (item.latitude is None or item.longitude is None)
+    ]
+    if not targets:
+        return
+
+    queries = {item.city: f"{item.city}, Россия" for item in targets}
+    cached = get_cached_geocodes(list(queries.values()))
+    last_request_at = 0.0
+    for city, query in queries.items():
+        if query in cached:
+            continue
+        wait_for = 1.05 - (time.monotonic() - last_request_at)
+        if wait_for > 0:
+            time.sleep(wait_for)
+        try:
+            response = requests.get(
+                GEOCODER_URL,
+                params={"q": query, "format": "jsonv2", "limit": 1, "countrycodes": "ru"},
+                headers={"User-Agent": GEOCODER_USER_AGENT},
+                timeout=20,
+            )
+            last_request_at = time.monotonic()
+            response.raise_for_status()
+            rows = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            logger.warning("Не удалось найти центр города %s: %s", city, exc)
+            continue
+        if rows:
+            row = rows[0]
+            cached[query] = {
+                "latitude": float(row["lat"]),
+                "longitude": float(row["lon"]),
+                "display_name": row.get("display_name", city),
+            }
+            save_cached_geocode(query, cached[query])
+
+    for item in targets:
+        match = cached.get(queries[item.city])
+        if match:
+            item.latitude = match["latitude"]
+            item.longitude = match["longitude"]
+            item.location_precision = "city"
 
 
 def build_snapshot(name: str, rk_values: Iterable[int]) -> dict:
@@ -302,7 +380,15 @@ def build_snapshot(name: str, rk_values: Iterable[int]) -> dict:
             missing.append(ref)
 
     fresh = collect_vacancies(missing)
-    stable = [item for item in fresh if item.status in {"active", "closed"}]
+    geocode_city_centers(fresh)
+    stable = [
+        item for item in fresh
+        if item.status == "closed"
+        or (
+            item.status == "active"
+            and (item.address or (item.latitude is not None and item.longitude is not None))
+        )
+    ]
     if stable:
         save_cached_placements([asdict(item) for item in stable])
         placements.extend(fresh)
@@ -315,7 +401,6 @@ def build_snapshot(name: str, rk_values: Iterable[int]) -> dict:
         asdict(item)
         for item in placements
         if item.status == "active"
-        and item.address
         and item.latitude is not None
         and item.longitude is not None
     ]
@@ -324,9 +409,15 @@ def build_snapshot(name: str, rk_values: Iterable[int]) -> dict:
         reasons = []
         if item.error:
             reasons.append(item.error)
-        if item.status == "active" and not item.address:
-            reasons.append("нет адреса")
-        if item.status == "active" and (item.latitude is None or item.longitude is None):
+        if item.status == "active" and not item.address and not item.city:
+            reasons.append("на HH не указан адрес или город")
+        elif item.status == "active" and not item.address and (
+            item.latitude is None or item.longitude is None
+        ):
+            reasons.append(f"на HH указан только город: {item.city}; центр города не найден")
+        elif item.status == "active" and item.address and (
+            item.latitude is None or item.longitude is None
+        ):
             reasons.append("нет координат")
         if reasons:
             issues.append({**asdict(item), "reasons": reasons})
@@ -344,6 +435,12 @@ def build_snapshot(name: str, rk_values: Iterable[int]) -> dict:
             "active": active,
             "closed": closed,
             "markers": len(markers),
+            "city_centers": sum(
+                item.location_precision == "city"
+                and item.latitude is not None
+                and item.longitude is not None
+                for item in placements
+            ),
             "issues": len(issues),
             "checked": len(missing),
             "cached": len(refs) - len(missing),

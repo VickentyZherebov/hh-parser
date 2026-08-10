@@ -65,6 +65,14 @@ def init_db():
             payload_json TEXT NOT NULL,
             checked_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS placement_geocode_cache (
+            query TEXT PRIMARY KEY,
+            latitude REAL NOT NULL,
+            longitude REAL NOT NULL,
+            display_name TEXT NOT NULL DEFAULT '',
+            checked_at TEXT NOT NULL
+        );
     """)
     conn.commit()
     conn.close()
@@ -266,6 +274,49 @@ def save_cached_placements(payloads: list[dict]) -> None:
             (payload["hh_id"], json.dumps(payload, ensure_ascii=False), checked_at)
             for payload in payloads
         ],
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_cached_geocodes(queries: list[str]) -> dict[str, dict]:
+    if not queries:
+        return {}
+    placeholders = ",".join("?" for _ in queries)
+    conn = get_conn()
+    rows = conn.execute(
+        f"SELECT query, latitude, longitude, display_name FROM placement_geocode_cache "
+        f"WHERE query IN ({placeholders})",
+        queries,
+    ).fetchall()
+    conn.close()
+    return {
+        row["query"]: {
+            "latitude": row["latitude"],
+            "longitude": row["longitude"],
+            "display_name": row["display_name"],
+        }
+        for row in rows
+    }
+
+
+def save_cached_geocode(query: str, payload: dict) -> None:
+    conn = get_conn()
+    conn.execute(
+        """
+        INSERT INTO placement_geocode_cache
+            (query, latitude, longitude, display_name, checked_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(query) DO UPDATE SET
+            latitude = excluded.latitude,
+            longitude = excluded.longitude,
+            display_name = excluded.display_name,
+            checked_at = excluded.checked_at
+        """,
+        (
+            query, payload["latitude"], payload["longitude"],
+            payload.get("display_name", ""), datetime.now(timezone.utc).isoformat(),
+        ),
     )
     conn.commit()
     conn.close()

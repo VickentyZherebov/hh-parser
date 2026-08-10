@@ -245,7 +245,8 @@
             `<span class="metric">Активных: <strong>${s.active}</strong></span>`,
             `<span class="metric">Закрытых: <strong>${s.closed}</strong></span>`,
             `<span class="metric primary">На карте: <strong>${s.markers}</strong></span>`,
-            `<span class="metric">Без адреса/координат: <strong>${snapshot.issues.filter(item => item.status !== 'closed').length}</strong></span>`
+            `<span class="metric">Центры городов: <strong>${s.city_centers || 0}</strong></span>`,
+            `<span class="metric">Без геопозиции: <strong>${snapshot.issues.filter(item => item.status !== 'closed').length}</strong></span>`
         ].join('');
     }
 
@@ -263,7 +264,7 @@
         fillSelect('rkFilter', rks, 'Все РК');
         document.getElementById('legend').innerHTML = rks.map(rk =>
             `<span class="legend-item"><i class="legend-dot" style="background:${colorForRk(rk)}"></i>РК ${escapeHtml(rk)}</span>`
-        ).join('');
+        ).join('') + `<span class="legend-item"><i class="legend-dot" style="border:2px dashed var(--text-muted);background:transparent"></i>центр города</span>`;
     }
 
     function initMap() {
@@ -297,12 +298,21 @@
             const point = [item.latitude, item.longitude];
             bounds.push(point);
             const color = colorForRk(item.rk);
+            const approximate = item.location_precision === 'city';
+            const locationText = approximate
+                ? `${escapeHtml(item.city)} — центр города, точный адрес не указан`
+                : escapeHtml(item.address);
             L.circleMarker(point, {
-                radius: 8, color, fillColor: color, fillOpacity: .82, weight: 2
+                radius: approximate ? 10 : 8,
+                color,
+                fillColor: color,
+                fillOpacity: approximate ? .28 : .82,
+                weight: 2,
+                dashArray: approximate ? '5 4' : null
             }).bindPopup(
                 `<strong>${escapeHtml(item.title)}</strong><br>` +
                 `${escapeHtml(item.employer)}<br>` +
-                `${escapeHtml(item.address)}<br>` +
+                `${locationText}<br>` +
                 `РК <strong>${escapeHtml(item.rk)}</strong><br>` +
                 `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener">HH ${escapeHtml(item.hh_id)}</a>`
             ).addTo(markerLayer);
