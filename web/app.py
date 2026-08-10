@@ -5,6 +5,7 @@ FastAPI-приложение: веб-версия HH-парсера.
 import asyncio
 import queue
 import tempfile
+import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -60,6 +61,9 @@ from web.db import (
     list_presets,
     create_preset,
     delete_preset,
+    save_placement_map,
+    get_placement_map,
+    list_placement_maps,
 )
 
 logger = logging.getLogger(__name__)
@@ -90,6 +94,10 @@ _last_salary_result: Optional[dict] = None
 
 # Кэш последнего гео-Excel Додо (байты) — для «Скачать»
 _last_dodo_xlsx: Optional[bytes] = None
+
+# Фоновые построения карты. Результат сохраняется в SQLite, поэтому job нужен
+# только на время ожидания и не является источником данных.
+_placement_jobs: dict[str, dict] = {}
 
 # Путь к дисковому кэшу датасета stats.hh.ru (общий с CLI-модулями)
 STATS_CACHE_PATH = str(Path(__file__).resolve().parent.parent / "data" / "stats_hh_cache.json")
@@ -170,6 +178,11 @@ class MarketRequest(BaseModel):
     prof_area_ids: list = []           # id профобластей + опц. "all" (пусто → все)
 
 
+class PlacementMapRequest(BaseModel):
+    name: str = "Карта размещений HH"
+    rk_ids: list[int] = []
+
+
 # ---------- Страницы ----------
 
 @app.get("/", response_class=HTMLResponse)
@@ -181,6 +194,24 @@ async def index(request: Request):
 async def login_page(request: Request):
     """Страница входа."""
     return templates.TemplateResponse("login.html", {"request": request})
+
+
+@app.get("/placement-map", response_class=HTMLResponse)
+async def placement_map_page(request: Request):
+    require_auth(request)
+    return templates.TemplateResponse(
+        "placement_map.html",
+        {"request": request, "map_id": "", "version": __version__},
+    )
+
+
+@app.get("/placement-map/{map_id}", response_class=HTMLResponse)
+async def saved_placement_map_page(map_id: str, request: Request):
+    require_auth(request)
+    return templates.TemplateResponse(
+        "placement_map.html",
+        {"request": request, "map_id": map_id, "version": __version__},
+    )
 
 
 # ---------- Health ----------
@@ -309,6 +340,92 @@ async def remove_preset(preset_id: int, request: Request):
     if not deleted:
         raise HTTPException(status_code=404, detail="Пресет не найден")
     return {"ok": True}
+
+
+# ---------- Placement map endpoints ----------
+
+@app.get("/api/placement-rks")
+async def list_placement_rks_endpoint(request: Request):
+    require_auth(request)
+    try:
+        from hh_placement_map import list_hh_campaigns
+
+        campaigns = await asyncio.to_thread(list_hh_campaigns)
+        return {"ok": True, "campaigns": campaigns}
+    except Exception as exc:
+        logger.exception("Ошибка загрузки списка HH РК")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+async def _run_placement_map_job(
+    job_id: str,
+    user_id: int,
+    name: str,
+    rk_ids: list[int],
+) -> None:
+    try:
+        from hh_placement_map import build_snapshot
+
+        payload = await asyncio.to_thread(build_snapshot, name, rk_ids)
+        map_id = uuid.uuid4().hex[:12]
+        await asyncio.to_thread(save_placement_map, map_id, user_id, payload["name"], payload)
+        _placement_jobs[job_id].update({
+            "status": "done",
+            "id": map_id,
+            "url": f"/placement-map/{map_id}",
+            "summary": payload["summary"],
+        })
+    except Exception as exc:
+        logger.exception("Ошибка фонового построения карты размещений")
+        _placement_jobs[job_id].update({"status": "error", "error": str(exc)})
+
+
+@app.post("/api/placement-maps", status_code=202)
+async def create_placement_map_endpoint(data: PlacementMapRequest, request: Request):
+    user = require_auth(request)
+    try:
+        from hh_placement_map import parse_rk_ids
+
+        rk_ids = parse_rk_ids(data.rk_ids)
+        user_id = int(user["sub"])
+        job_id = uuid.uuid4().hex[:12]
+        # Не даём временным статусам расти бесконечно.
+        cutoff = time.time() - 24 * 3600
+        for old_id in [key for key, value in _placement_jobs.items() if value["created"] < cutoff]:
+            _placement_jobs.pop(old_id, None)
+        _placement_jobs[job_id] = {
+            "status": "running",
+            "user_id": user_id,
+            "created": time.time(),
+        }
+        asyncio.create_task(_run_placement_map_job(job_id, user_id, data.name, rk_ids))
+        return {"ok": True, "job_id": job_id, "status": "running"}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/placement-map-jobs/{job_id}")
+async def get_placement_map_job_endpoint(job_id: str, request: Request):
+    user = require_auth(request)
+    job = _placement_jobs.get(job_id)
+    if not job or job["user_id"] != int(user["sub"]):
+        raise HTTPException(status_code=404, detail="Построение карты не найдено")
+    return {key: value for key, value in job.items() if key not in {"user_id", "created"}}
+
+
+@app.get("/api/placement-maps")
+async def list_placement_maps_endpoint(request: Request):
+    user = require_auth(request)
+    maps = await asyncio.to_thread(list_placement_maps, int(user["sub"]))
+    return {"ok": True, "maps": maps}
+
+
+@app.get("/api/placement-maps/{map_id}")
+async def get_placement_map_endpoint(map_id: str, request: Request):
+    require_auth(request)
+    saved = await asyncio.to_thread(get_placement_map, map_id)
+    if not saved:
+        raise HTTPException(status_code=404, detail="Карта не найдена")
+    return {"ok": True, **saved}
 
 
 # ---------- Geo endpoints ----------

@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Карта размещений HH</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <style>
+        body { margin: 0; }
+        .map-shell { max-width: 1320px; margin: 0 auto; padding: 20px; }
+        .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+        .topbar a { color: var(--accent); text-decoration: none; }
+        .build-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .build-grid .full { grid-column: 1 / -1; }
+        input, select {
+            width: 100%; box-sizing: border-box; padding: 10px 12px;
+            color: var(--text); background: var(--surface-2);
+            border: 1px solid var(--border); border-radius: var(--radius-sm);
+        }
+        #rkSelect { min-height: 260px; }
+        .selector-head { display:flex; gap:10px; align-items:center; margin-bottom:8px; }
+        .selector-head input { flex:1; }
+        .selector-head label { display:flex; align-items:center; gap:6px; white-space:nowrap; }
+        .selector-head input[type="checkbox"] { width:auto; }
+        .hint { color: var(--text-muted); font-size: .82rem; line-height: 1.45; }
+        .filters { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; }
+        #map { height: 66vh; min-height: 480px; border-radius: var(--radius); border: 1px solid var(--border); }
+        .summary { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
+        .metric { padding: 8px 12px; border-radius: 10px; background: var(--surface-2); color: var(--text-muted); }
+        .metric strong { color: var(--text); }
+        .error { color: var(--red); white-space: pre-wrap; }
+        .issues { width: 100%; border-collapse: collapse; font-size: .85rem; }
+        .issues th, .issues td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
+        .leaflet-popup-content a { color: #1166cc; }
+        .leaflet-popup-content { line-height: 1.45; }
+        @media (max-width: 760px) {
+            .build-grid, .filters { grid-template-columns: 1fr; }
+            .build-grid .full { grid-column: auto; }
+            #map { min-height: 420px; }
+        }
+    </style>
+</head>
+<body>
+<main class="map-shell">
+    <div class="topbar">
+        <div>
+            <h1 style="margin:0">Карта размещений HH</h1>
+            <div class="hint">Занятые адреса активных вакансий перед новым постингом</div>
+        </div>
+        <a href="/">← Все инструменты</a>
+    </div>
+
+    <section class="card" id="builderCard">
+        <div class="card-title">Собрать свежую карту</div>
+        <div class="build-grid">
+            <label>
+                Название карты
+                <input id="mapName" value="Карта размещений HH">
+            </label>
+            <div>
+                <label for="rkSearch">Рекламные кампании с источником HH</label>
+                <div class="selector-head">
+                    <input id="rkSearch" placeholder="Номер или название РК" oninput="renderRkOptions()">
+                    <label class="hint"><input type="checkbox" id="showDisabled" onchange="renderRkOptions()"> выключенные</label>
+                </div>
+                <select id="rkSelect" disabled></select>
+                <div class="hint" id="rkHint">Загружаю список РК…</div>
+            </div>
+            <div class="full">
+                <button class="btn-primary" id="buildBtn" onclick="buildMap()" disabled>Обновить карту</button>
+                <span class="hint" id="buildStatus"></span>
+                <div class="error" id="buildError"></div>
+            </div>
+        </div>
+    </section>
+
+    <section id="savedList" class="card" style="display:none"></section>
+
+    <section id="viewer" style="display:none">
+        <div class="card">
+            <div class="topbar" style="margin:0">
+                <div>
+                    <div class="card-title" id="snapshotName"></div>
+                    <div class="hint" id="snapshotDate"></div>
+                </div>
+                <button onclick="copyLink()">Копировать ссылку</button>
+            </div>
+            <div class="summary" id="summary"></div>
+            <div class="filters">
+                <label>Город<select id="cityFilter" onchange="renderMarkers()"></select></label>
+                <label>РК<select id="rkFilter" onchange="renderMarkers()"></select></label>
+                <button onclick="resetFilters()">Сбросить</button>
+            </div>
+        </div>
+        <div id="map"></div>
+        <section class="card" id="issuesCard" style="display:none">
+            <div class="card-title">Требуют внимания</div>
+            <div class="hint">Эти вакансии не потерялись: для них не удалось построить корректный маркер.</div>
+            <div style="overflow:auto"><table class="issues">
+                <thead><tr><th>HH ID</th><th>Вакансия</th><th>Компания</th><th>Причина</th></tr></thead>
+                <tbody id="issuesBody"></tbody>
+            </table></div>
+        </section>
+    </section>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    const MAP_ID = {{ map_id|tojson }};
+    let snapshot = null;
+    let leafletMap = null;
+    let markerLayer = null;
+    let campaigns = [];
+
+    const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, ch => ({
+        '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;'
+    }[ch]));
+
+    async function buildMap() {
+        const button = document.getElementById('buildBtn');
+        const status = document.getElementById('buildStatus');
+        const error = document.getElementById('buildError');
+        const rkIds = [...document.getElementById('rkSelect').selectedOptions]
+            .map(option => Number(option.value));
+        if (!rkIds.length) {
+            error.textContent = 'Выбери хотя бы одну РК';
+            return;
+        }
+        error.textContent = '';
+        button.disabled = true;
+        status.textContent = 'Получаю связанные HH ID и проверяю публичные карточки…';
+        try {
+            const response = await fetch('/api/placement-maps', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({name: document.getElementById('mapName').value, rk_ids: rkIds})
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || 'Не удалось собрать карту');
+            await waitForJob(data.job_id);
+        } catch (e) {
+            error.textContent = e.message;
+            status.textContent = '';
+            button.disabled = false;
+        }
+    }
+
+    async function waitForJob(jobId) {
+        const status = document.getElementById('buildStatus');
+        while (true) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            const response = await fetch(`/api/placement-map-jobs/${jobId}`);
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || 'Не удалось получить статус карты');
+            if (data.status === 'done') {
+                window.location.href = data.url;
+                return;
+            }
+            if (data.status === 'error') throw new Error(data.error || 'Не удалось собрать карту');
+            status.textContent = 'Проверяю вакансии HH… Можно не держать соединение открытым.';
+        }
+    }
+
+    async function loadCampaigns() {
+        const select = document.getElementById('rkSelect');
+        const hint = document.getElementById('rkHint');
+        try {
+            const response = await fetch('/api/placement-rks');
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || 'Не удалось загрузить РК');
+            campaigns = data.campaigns;
+            select.disabled = false;
+            document.getElementById('buildBtn').disabled = false;
+            hint.textContent = `${campaigns.filter(item => item.enabled).length} активных РК.`;
+            renderRkOptions();
+        } catch (e) {
+            hint.textContent = '';
+            document.getElementById('buildError').textContent = e.message;
+        }
+    }
+
+    function renderRkOptions() {
+        const select = document.getElementById('rkSelect');
+        const selected = new Set([...select.selectedOptions].map(option => option.value));
+        const query = document.getElementById('rkSearch').value.trim().toLowerCase();
+        const showDisabled = document.getElementById('showDisabled').checked;
+        const visible = campaigns.filter(item =>
+            (showDisabled || item.enabled) &&
+            (!query || String(item.id).includes(query) || item.name.toLowerCase().includes(query))
+        );
+        select.innerHTML = visible.map(item =>
+            `<option value="${item.id}" ${selected.has(String(item.id)) ? 'selected' : ''}>` +
+            `РК ${item.id} — ${escapeHtml(item.name || 'Без названия')}${item.enabled ? '' : ' [выключена]'}</option>`
+        ).join('');
+    }
+
+    async function loadSnapshot() {
+        const response = await fetch(`/api/placement-maps/${MAP_ID}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Карта не найдена');
+        snapshot = data.payload;
+        document.getElementById('builderCard').style.display = 'none';
+        document.getElementById('viewer').style.display = 'block';
+        document.getElementById('snapshotName').textContent = snapshot.name;
+        document.getElementById('snapshotDate').textContent =
+            `Срез от ${new Date(snapshot.created_at).toLocaleString('ru-RU')}`;
+        renderSummary();
+        initFilters();
+        initMap();
+        renderIssues();
+    }
+
+    function renderSummary() {
+        const s = snapshot.summary;
+        document.getElementById('summary').innerHTML = [
+            `<span class="metric">Привязано ID: <strong>${s.linked}</strong></span>`,
+            `<span class="metric">Активных: <strong>${s.active}</strong></span>`,
+            `<span class="metric">Закрытых: <strong>${s.closed}</strong></span>`,
+            `<span class="metric">На карте: <strong>${s.markers}</strong></span>`,
+            `<span class="metric">Требуют внимания: <strong>${s.issues}</strong></span>`,
+            `<span class="metric">Проверено сейчас: <strong>${s.checked}</strong></span>`,
+            `<span class="metric">Из кэша: <strong>${s.cached}</strong></span>`
+        ].join('');
+    }
+
+    function fillSelect(id, values, allLabel) {
+        const select = document.getElementById(id);
+        select.innerHTML = `<option value="">${allLabel}</option>` + values.map(value =>
+            `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`
+        ).join('');
+    }
+
+    function initFilters() {
+        const cities = [...new Set(snapshot.markers.map(v => v.city).filter(Boolean))].sort();
+        const rks = [...new Set(snapshot.markers.map(v => String(v.rk)))].sort((a,b) => Number(a)-Number(b));
+        fillSelect('cityFilter', cities, 'Все города');
+        fillSelect('rkFilter', rks, 'Все РК');
+    }
+
+    function initMap() {
+        leafletMap = L.map('map');
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; OpenStreetMap'
+        }).addTo(leafletMap);
+        markerLayer = L.layerGroup().addTo(leafletMap);
+        renderMarkers();
+    }
+
+    function colorForRk(rk) {
+        let hash = 0;
+        for (const ch of String(rk)) hash = ((hash << 5) - hash) + ch.charCodeAt(0);
+        return `hsl(${Math.abs(hash) % 360} 72% 44%)`;
+    }
+
+    function renderMarkers() {
+        if (!markerLayer) return;
+        markerLayer.clearLayers();
+        const city = document.getElementById('cityFilter').value;
+        const rk = document.getElementById('rkFilter').value;
+        const visible = snapshot.markers.filter(item =>
+            (!city || item.city === city) && (!rk || String(item.rk) === rk)
+        );
+        const bounds = [];
+        visible.forEach(item => {
+            const point = [item.latitude, item.longitude];
+            bounds.push(point);
+            const color = colorForRk(item.rk);
+            L.circleMarker(point, {
+                radius: 8, color, fillColor: color, fillOpacity: .82, weight: 2
+            }).bindPopup(
+                `<strong>${escapeHtml(item.title)}</strong><br>` +
+                `${escapeHtml(item.employer)}<br>` +
+                `${escapeHtml(item.address)}<br>` +
+                `РК <strong>${escapeHtml(item.rk)}</strong><br>` +
+                `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener">HH ${escapeHtml(item.hh_id)}</a>`
+            ).addTo(markerLayer);
+        });
+        if (bounds.length) leafletMap.fitBounds(bounds, {padding:[30,30], maxZoom:14});
+        else leafletMap.setView([55.75, 37.62], 5);
+    }
+
+    function renderIssues() {
+        if (!snapshot.issues.length) return;
+        document.getElementById('issuesCard').style.display = 'block';
+        document.getElementById('issuesBody').innerHTML = snapshot.issues.map(item => `
+            <tr>
+                <td><a href="${escapeHtml(item.url)}" target="_blank" rel="noopener">${escapeHtml(item.hh_id)}</a></td>
+                <td>${escapeHtml(item.title)}</td>
+                <td>${escapeHtml(item.employer)}</td>
+                <td>${escapeHtml(item.reasons.join(', '))}</td>
+            </tr>`).join('');
+    }
+
+    function resetFilters() {
+        document.getElementById('cityFilter').value = '';
+        document.getElementById('rkFilter').value = '';
+        renderMarkers();
+    }
+
+    async function copyLink() {
+        await navigator.clipboard.writeText(window.location.href);
+    }
+
+    async function loadRecent() {
+        const response = await fetch('/api/placement-maps');
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!data.maps.length) return;
+        const box = document.getElementById('savedList');
+        box.style.display = 'block';
+        box.innerHTML = '<div class="card-title">Последние карты</div>' + data.maps.map(item =>
+            `<div><a href="/placement-map/${escapeHtml(item.id)}">${escapeHtml(item.name)}</a> ` +
+            `<span class="hint">${new Date(item.created_at + 'Z').toLocaleString('ru-RU')}</span></div>`
+        ).join('');
+    }
+
+    if (MAP_ID) loadSnapshot().catch(e => {
+        document.getElementById('builderCard').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+    });
+    else {
+        loadCampaigns();
+        loadRecent();
+    }
+</script>
+</body>
+</html>

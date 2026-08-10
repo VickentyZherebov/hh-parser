@@ -17,6 +17,7 @@ COPY hh_browser_fetcher.py .
 COPY hh_market_stats.py .
 COPY hh_market_index.py .
 COPY hh_market_salary.py .
+COPY hh_placement_map.py .
 COPY dodo.py .
 COPY manage.py .
 COPY web/ web/

@@ -5,7 +5,7 @@
 import json
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 DB_PATH = os.environ.get("DB_PATH", str(Path(__file__).resolve().parent.parent / "data" / "hh_parser.db"))
@@ -48,6 +48,23 @@ def init_db():
         );
 
         CREATE INDEX IF NOT EXISTS idx_presets_user ON presets(user_id);
+
+        CREATE TABLE IF NOT EXISTS placement_maps (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_placement_maps_user
+            ON placement_maps(user_id, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS placement_vacancy_cache (
+            hh_id TEXT PRIMARY KEY,
+            payload_json TEXT NOT NULL,
+            checked_at TEXT NOT NULL
+        );
     """)
     conn.commit()
     conn.close()
@@ -171,3 +188,84 @@ def delete_preset(preset_id: int, user_id: int) -> bool:
     deleted = cur.rowcount > 0
     conn.close()
     return deleted
+
+
+# ---------- Placement maps ----------
+
+def save_placement_map(map_id: str, user_id: int, name: str, payload: dict) -> None:
+    conn = get_conn()
+    conn.execute(
+        "INSERT INTO placement_maps (id, user_id, name, payload_json) VALUES (?, ?, ?, ?)",
+        (map_id, user_id, name, json.dumps(payload, ensure_ascii=False)),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_placement_map(map_id: str) -> dict | None:
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT id, user_id, name, payload_json, created_at FROM placement_maps WHERE id = ?",
+        (map_id,),
+    ).fetchone()
+    conn.close()
+    if not row:
+        return None
+    result = dict(row)
+    result["payload"] = json.loads(result.pop("payload_json"))
+    return result
+
+
+def list_placement_maps(user_id: int, limit: int = 20) -> list[dict]:
+    conn = get_conn()
+    rows = conn.execute(
+        """
+        SELECT id, name, created_at
+        FROM placement_maps
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+        LIMIT ?
+        """,
+        (user_id, limit),
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def get_cached_placements(hh_ids: list[str], ttl_hours: int | None = None) -> dict[str, dict]:
+    if not hh_ids:
+        return {}
+    if ttl_hours is None:
+        ttl_hours = int(os.environ.get("HH_PLACEMENT_CACHE_TTL_HOURS", "6"))
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=ttl_hours)).isoformat()
+    placeholders = ",".join("?" for _ in hh_ids)
+    conn = get_conn()
+    rows = conn.execute(
+        f"SELECT hh_id, payload_json FROM placement_vacancy_cache "
+        f"WHERE hh_id IN ({placeholders}) AND checked_at >= ?",
+        (*hh_ids, cutoff),
+    ).fetchall()
+    conn.close()
+    return {row["hh_id"]: json.loads(row["payload_json"]) for row in rows}
+
+
+def save_cached_placements(payloads: list[dict]) -> None:
+    if not payloads:
+        return
+    checked_at = datetime.now(timezone.utc).isoformat()
+    conn = get_conn()
+    conn.executemany(
+        """
+        INSERT INTO placement_vacancy_cache (hh_id, payload_json, checked_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(hh_id) DO UPDATE SET
+            payload_json = excluded.payload_json,
+            checked_at = excluded.checked_at
+        """,
+        [
+            (payload["hh_id"], json.dumps(payload, ensure_ascii=False), checked_at)
+            for payload in payloads
+        ],
+    )
+    conn.commit()
+    conn.close()
