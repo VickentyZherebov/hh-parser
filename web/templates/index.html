@@ -249,6 +249,25 @@
         #geoProgressBar {
             margin-bottom: 20px;
         }
+
+        /* ---------- FAQ лендинга ---------- */
+        .faq-section { margin-top: 28px; }
+        .faq-intro { color: var(--text-muted); margin: -4px 0 18px; line-height: 1.55; }
+        .faq-list { display: grid; gap: 10px; }
+        .faq-item {
+            border: 1px solid var(--border); border-radius: var(--radius-sm);
+            background: var(--surface-2); overflow: hidden;
+        }
+        .faq-item summary {
+            cursor: pointer; padding: 15px 18px; font-weight: 600;
+            list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+        }
+        .faq-item summary::-webkit-details-marker { display: none; }
+        .faq-item summary::after { content: '+'; color: var(--accent); font-size: 1.3rem; font-weight: 400; }
+        .faq-item[open] summary::after { content: '−'; }
+        .faq-answer { padding: 0 18px 16px; color: var(--text-muted); line-height: 1.65; }
+        .faq-answer strong { color: var(--text); }
+        .faq-answer a { color: var(--accent); }
     </style>
 </head>
 <body>
@@ -781,6 +800,66 @@
 
     </div>
     <!-- конец tabDodo -->
+
+    <section class="card faq-section" id="faq">
+        <div class="card-title">Частые вопросы</div>
+        <p class="faq-intro">Коротко о том, какой инструмент выбрать, откуда берутся данные и что делать, если HeadHunter временно не отвечает.</p>
+        <div class="faq-list">
+            <details class="faq-item">
+                <summary>Какой раздел мне нужен?</summary>
+                <div class="faq-answer">
+                    <strong>«Компании по индустриям»</strong> собирает работодателей по отраслям.
+                    <strong>«Вакансии по гео»</strong> сравнивает спрос по городам и профессиям.
+                    <strong>«Индекс ХХ»</strong> и <strong>«Зарплаты»</strong> показывают рыночную статистику.
+                    <strong>«Додо»</strong> готовит адреса для постинга Додо.
+                    <strong>«Карта размещений»</strong> показывает уже занятые нашими HH-вакансиями адреса по выбранной РК.
+                </div>
+            </details>
+            <details class="faq-item">
+                <summary>Как пользоваться картой размещений?</summary>
+                <div class="faq-answer">
+                    Открой <a href="/placement-map">«Карту размещений»</a>, найди рекламную кампанию по номеру или названию и нажми «Обновить карту».
+                    На карте появятся адреса активных вакансий. Фильтр города помогает увидеть занятые точки перед новым постингом, а клик по маркеру открывает вакансию на HH.
+                </div>
+            </details>
+            <details class="faq-item">
+                <summary>Нужно ли вводить HH ID, employer ID или данные аккаунта?</summary>
+                <div class="faq-answer">
+                    Нет. Для карты достаточно выбрать РК. Связанные HH ID приложение получает из базы Avileads через read-only подключение, а адрес и статус — из публичной карточки вакансии. Пароли от кабинетов HH инструменту не нужны.
+                </div>
+            </details>
+            <details class="faq-item">
+                <summary>Насколько свежие данные на карте?</summary>
+                <div class="faq-answer">
+                    При каждом запросе приложение сверяет список HH ID с базой и сразу загружает новые вакансии. Уже известные карточки хранятся в кэше и перепроверяются раз в 6 часов — это позволяет заметить закрытие вакансии или изменение адреса, не создавая лишнюю нагрузку на HH.
+                </div>
+            </details>
+            <details class="faq-item">
+                <summary>Почему точек на карте меньше, чем связанных HH ID?</summary>
+                <div class="faq-answer">
+                    На карту попадают только <strong>активные вакансии с адресом и координатами</strong>. Закрытые вакансии находятся в отдельном сворачиваемом списке. Карточки без адреса или координат показываются в блоке «Требуют внимания», поэтому данные не теряются молча.
+                </div>
+            </details>
+            <details class="faq-item">
+                <summary>Что означает «HH временно запросил проверку»?</summary>
+                <div class="faq-answer">
+                    HeadHunter иногда показывает защитную страницу вместо вакансии. Приложение распознаёт её, не принимает за реальную карточку, меняет прокси и повторяет запрос автоматически. Если все попытки не удались, вакансия останется в «Требуют внимания» и будет проверена при следующем обновлении.
+                </div>
+            </details>
+            <details class="faq-item">
+                <summary>Инструмент публикует или редактирует вакансии?</summary>
+                <div class="faq-answer">
+                    Нет. Он только читает публичные страницы HH и данные связок из базы. Выбор нового адреса, публикация, редактирование и закрытие вакансий остаются ручными действиями в кабинете HeadHunter.
+                </div>
+            </details>
+            <details class="faq-item">
+                <summary>Можно ли поделиться готовой картой?</summary>
+                <div class="faq-answer">
+                    Да. Каждый результат сохраняется как отдельный снимок. Нажми «Копировать ссылку» на странице карты — после входа коллега увидит тот же набор точек, фильтры и список проблемных вакансий.
+                </div>
+            </details>
+        </div>
+    </section>
 
 </main>
 

@@ -6,6 +6,7 @@ from hh_placement_map import (
     VacancyRef,
     VacancyPlacement,
     build_snapshot,
+    is_transient_payload,
     parse_rk_ids,
     parse_vacancy_page,
 )
@@ -98,6 +99,20 @@ def test_parse_vacancy_page_detects_archived_card():
     item = parse_vacancy_page("<h1>Курьер</h1><div>Вакансия в архиве</div>", ref)
     assert item.status == "closed"
     assert "архиве" in item.error
+
+
+def test_parse_vacancy_page_detects_hh_challenge():
+    ref = VacancyRef("13", 1187, "Тест", "https://hh.ru/vacancy/13")
+    item = parse_vacancy_page("<h1>Подтвердите, что вы не робот</h1>", ref)
+    assert item.status == "error"
+    assert item.title == ""
+    assert "повторно" in item.error
+
+
+def test_old_captcha_cache_is_transient():
+    assert is_transient_payload({"status": "active", "title": "Подтвердите, что вы не робот"})
+    assert is_transient_payload({"status": "error", "title": ""})
+    assert not is_transient_payload({"status": "active", "title": "Курьер"})
 
 
 def test_sqlite_cache_respects_ttl(tmp_path, monkeypatch):

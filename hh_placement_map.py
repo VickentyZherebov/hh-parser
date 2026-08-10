@@ -17,6 +17,7 @@ from hh_browser_fetcher import PAGE_TIMEOUT_MS, ProxyManager, USER_AGENT
 
 BASE_URL = "https://hh.ru"
 DETAIL_CONCURRENCY = int(os.environ.get("HH_PLACEMENT_CONCURRENCY", "4"))
+DETAIL_ATTEMPTS = int(os.environ.get("HH_PLACEMENT_ATTEMPTS", "3"))
 MAX_RKS_PER_REQUEST = int(os.environ.get("HH_PLACEMENT_MAX_RKS", "20"))
 MAX_VACANCIES_PER_REQUEST = int(os.environ.get("HH_PLACEMENT_MAX_VACANCIES", "1500"))
 
@@ -30,6 +31,12 @@ ARCHIVE_MARKERS = (
     "вакансия закрыта",
     "такой страницы нет",
     "вакансия уже не доступна",
+)
+CHALLENGE_MARKERS = (
+    "подтвердите, что вы не робот",
+    "проверка, что вы не робот",
+    "captcha",
+    "challenge-page",
 )
 
 
@@ -141,6 +148,7 @@ def parse_vacancy_page(html: str, ref: VacancyRef) -> VacancyPlacement:
     soup = BeautifulSoup(html, "lxml")
     page_text = soup.get_text(" ", strip=True).lower()
     archived = any(marker in page_text for marker in ARCHIVE_MARKERS)
+    challenged = any(marker in page_text or marker in html.lower() for marker in CHALLENGE_MARKERS)
     title_node = soup.select_one('h1[data-qa="vacancy-title"]') or soup.select_one("h1")
     employer_node = soup.select_one('a[href*="/employer/"]')
     address_node = soup.select_one('[data-qa="vacancy-view-raw-address"]')
@@ -149,7 +157,10 @@ def parse_vacancy_page(html: str, ref: VacancyRef) -> VacancyPlacement:
     employer_href = employer_node.get("href", "") if employer_node else ""
     employer_match = EMPLOYER_RE.search(employer_href)
 
-    if archived:
+    if challenged:
+        status = "error"
+        error = "HH временно запросил проверку — карточка будет загружена повторно"
+    elif archived:
         status = "closed"
         error = "вакансия закрыта или в архиве"
     elif not title_node:
@@ -164,7 +175,7 @@ def parse_vacancy_page(html: str, ref: VacancyRef) -> VacancyPlacement:
         rk=ref.rk,
         rk_name=ref.rk_name,
         url=ref.url,
-        title=title_node.get_text(" ", strip=True) if title_node else "",
+        title=title_node.get_text(" ", strip=True) if title_node and not challenged else "",
         employer=employer_node.get_text(" ", strip=True) if employer_node else "",
         employer_id=employer_match.group(1) if employer_match else "",
         address=address,
@@ -208,40 +219,67 @@ async def collect_vacancies_async(
     if not refs:
         return []
     proxy_manager = None if os.environ.get("HH_PLACEMENT_NO_PROXY") == "1" else ProxyManager()
-    proxy = await proxy_manager.acquire() if proxy_manager else None
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(
             headless=True,
             args=["--disable-dev-shm-usage", "--no-sandbox", "--disable-gpu"],
         )
-        context_kwargs = {
-            "user_agent": USER_AGENT,
-            "locale": "ru-RU",
-            "viewport": {"width": 1366, "height": 900},
-        }
-        if proxy:
-            context_kwargs["proxy"] = {
-                "server": proxy.server,
-                "username": proxy.username,
-                "password": proxy.password,
-            }
-        context = await browser.new_context(**context_kwargs)
         try:
-            semaphore = asyncio.Semaphore(DETAIL_CONCURRENCY)
-            tasks = [_collect_detail(context, ref, semaphore) for ref in refs]
-            result: list[VacancyPlacement] = []
-            for index, future in enumerate(asyncio.as_completed(tasks), start=1):
-                result.append(await future)
-                if progress_cb:
-                    progress_cb({"stage": "details", "done": index, "total": len(tasks)})
-            return result
+            pending = list(refs)
+            result_by_id: dict[str, VacancyPlacement] = {}
+            attempts = DETAIL_ATTEMPTS if proxy_manager else 1
+            for attempt in range(1, attempts + 1):
+                proxy = await proxy_manager.acquire() if proxy_manager else None
+                context_kwargs = {
+                    "user_agent": USER_AGENT,
+                    "locale": "ru-RU",
+                    "viewport": {"width": 1366, "height": 900},
+                }
+                if proxy:
+                    context_kwargs["proxy"] = {
+                        "server": proxy.server,
+                        "username": proxy.username,
+                        "password": proxy.password,
+                    }
+                context = await browser.new_context(**context_kwargs)
+                try:
+                    semaphore = asyncio.Semaphore(DETAIL_CONCURRENCY)
+                    tasks = [_collect_detail(context, ref, semaphore) for ref in pending]
+                    retry_refs: list[VacancyRef] = []
+                    refs_by_id = {ref.hh_id: ref for ref in pending}
+                    for index, future in enumerate(asyncio.as_completed(tasks), start=1):
+                        item = await future
+                        if item.status == "error" and attempt < attempts:
+                            retry_refs.append(refs_by_id[item.hh_id])
+                        else:
+                            result_by_id[item.hh_id] = item
+                        if progress_cb:
+                            progress_cb({
+                                "stage": "details", "done": index, "total": len(tasks),
+                                "attempt": attempt,
+                            })
+                finally:
+                    await context.close()
+
+                if not retry_refs:
+                    break
+                if proxy_manager and proxy:
+                    await proxy_manager.quarantine(proxy)
+                pending = retry_refs
+
+            return [result_by_id[ref.hh_id] for ref in refs if ref.hh_id in result_by_id]
         finally:
-            await context.close()
             await browser.close()
 
 
 def collect_vacancies(refs: list[VacancyRef]) -> list[VacancyPlacement]:
     return asyncio.run(collect_vacancies_async(refs))
+
+
+def is_transient_payload(payload: dict) -> bool:
+    """Отбрасывает ошибки и старые ошибочно закэшированные CAPTCHA-страницы."""
+    title = str(payload.get("title", "")).lower()
+    return payload.get("status") == "error" or any(marker in title for marker in CHALLENGE_MARKERS)
 
 
 def build_snapshot(name: str, rk_values: Iterable[int]) -> dict:
@@ -256,15 +294,16 @@ def build_snapshot(name: str, rk_values: Iterable[int]) -> dict:
 
     for ref in refs:
         payload = cached.get(ref.hh_id)
-        if payload:
+        if payload and not is_transient_payload(payload):
             payload.update({"rk": ref.rk, "rk_name": ref.rk_name, "url": ref.url})
             placements.append(VacancyPlacement(**payload))
         else:
             missing.append(ref)
 
     fresh = collect_vacancies(missing)
-    if fresh:
-        save_cached_placements([asdict(item) for item in fresh])
+    stable = [item for item in fresh if item.status in {"active", "closed"}]
+    if stable:
+        save_cached_placements([asdict(item) for item in stable])
         placements.extend(fresh)
 
     # Асинхронная загрузка меняет порядок; возвращаем порядок связок из БД.
