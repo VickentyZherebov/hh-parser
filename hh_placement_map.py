@@ -35,8 +35,6 @@ ARCHIVE_MARKERS = (
 CHALLENGE_MARKERS = (
     "подтвердите, что вы не робот",
     "проверка, что вы не робот",
-    "captcha",
-    "challenge-page",
 )
 
 
@@ -148,7 +146,10 @@ def parse_vacancy_page(html: str, ref: VacancyRef) -> VacancyPlacement:
     soup = BeautifulSoup(html, "lxml")
     page_text = soup.get_text(" ", strip=True).lower()
     archived = any(marker in page_text for marker in ARCHIVE_MARKERS)
-    challenged = any(marker in page_text or marker in html.lower() for marker in CHALLENGE_MARKERS)
+    challenged = (
+        any(marker in page_text for marker in CHALLENGE_MARKERS)
+        or soup.select_one('[data-qa*="captcha"], form[action*="captcha"]') is not None
+    )
     title_node = soup.select_one('h1[data-qa="vacancy-title"]') or soup.select_one("h1")
     employer_node = soup.select_one('a[href*="/employer/"]')
     address_node = soup.select_one('[data-qa="vacancy-view-raw-address"]')
